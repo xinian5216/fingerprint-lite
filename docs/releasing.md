@@ -11,13 +11,26 @@ file mirror that version for the bundled UI; the API, desktop display, and
 portable package name must be checked against it. The Camoufox browser version
 is an independent pin and must not be changed when bumping Fingerprint Lite.
 
-## Future tagged releases
+## Tagged releases (workflow behavior)
 
-The inherited `release.yml` workflow runs on `v*` tags. Pushing a tag builds a
-wheel and source distribution, creates/updates a GitHub Release, and uploads the
-artifacts. If `PUBLISH_TO_PYPI=true`, it also attempts PyPI publishing. Do not
-push a tag until the owner separately authorizes that release; CI success alone
-does not grant release authorization.
+The `release.yml` workflow runs on `v*` tags. Pushing a tag builds a wheel and
+source distribution and creates/updates a GitHub Release with those artifacts.
+
+- **Pre-release gating.** Tags containing `-alpha`, `-beta`, or `-rc` (e.g.
+  `v0.1.0-alpha.1`) are published with `prerelease: true` and `make_latest:
+  false`, so they can never become the Stable/latest Release. Only plain
+  version tags (e.g. `v0.2.0`) produce a normal Release.
+- **PyPI stays opt-in.** The `publish-pypi` job runs only when the repository
+  variable `PUBLISH_TO_PYPI` equals `true` (it is currently unset) *and* a
+  Trusted Publisher is configured on PyPI. Otherwise no PyPI upload can happen.
+- **Frozen platform binaries are attached by hand, never rebuilt by CI.** The
+  workflow does not build the Windows portable ZIP. A frozen, machine-accepted
+  ZIP (with its `SHA256SUMS.txt` and `RELEASE-MANIFEST.txt`) is uploaded to the
+  Release with `gh release upload` after the tag run succeeds, so the download
+  users get is byte-identical to the accepted artifact.
+
+Do not push a tag until the owner separately authorizes that release; CI
+success alone does not grant release authorization.
 
 Before a future tagged release:
 
