@@ -218,6 +218,21 @@ def test_a_bad_path_is_reported_before_anything_is_written(tmp_path, protected_e
     assert not (tmp_path / "paths.env").exists()
 
 
+def test_the_dialog_language_defaults_to_chinese():
+    assert wizard.wizard_lang({"LANG": "zh_CN.UTF-8"}) == "zh-CN"
+    assert wizard.wizard_lang({"LANG": "en_US.UTF-8"}) == "en"
+    assert wizard.wizard_lang({}) == "zh-CN"
+
+
+def test_the_rendered_dialog_carries_both_languages():
+    html = wizard._WIZARD_HTML
+    assert "__STRINGS__" in html and "__LANG__" in html
+    assert "欢迎使用 Fingerprint Lite" in wizard._WIZARD_STRINGS["zh-CN"]["title"]
+    assert wizard._WIZARD_STRINGS["en"]["start"] == "Start"
+    assert wizard._WIZARD_STRINGS["zh-CN"]["start"] == "开始"
+    assert set(wizard._WIZARD_STRINGS["zh-CN"]) == set(wizard._WIZARD_STRINGS["en"])
+
+
 def test_a_second_start_while_setup_runs_is_refused(tmp_path):
     """Two concurrent installs would fight over the same Browser folder."""
     import threading
@@ -414,7 +429,7 @@ def test_the_real_window_passes_pywebview_an_object_with_exposed_methods(
     wizard._open_window(tmp_path, environ=os.environ)
 
     api = captured["js_api"]
-    for method in ("pick_folder", "pick_zip", "submit", "use_defaults", "cancel"):
+    for method in ("pick_folder", "pick_zip", "submit", "use_defaults", "progress", "cancel"):
         assert callable(getattr(api, method, None)), (
             f"PyWebView cannot expose {method}: js_api must be an object with bound methods"
         )

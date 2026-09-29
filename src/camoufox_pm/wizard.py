@@ -380,22 +380,123 @@ def _open_window(program_dir: Path, environ: MutableMapping[str, str] | None = N
 
     defaults = default_answers(program_dir)
     existing = existing_data_dir(program_dir, environ)
+    lang = wizard_lang(environ)
     html = (
         _WIZARD_HTML.replace("__DATA__", str(defaults.data_dir))
         .replace("__BROWSER__", str(defaults.browser_dir))
         .replace("__TEMP__", str(defaults.temp_dir))
         .replace("__EXISTING__", str(existing) if existing else "")
+        .replace("__LANG__", lang)
+        .replace("__STRINGS__", json.dumps(_WIZARD_STRINGS))
     )
 
     window = webview.create_window(
-        "Fingerprint Lite — first start",
+        _WIZARD_STRINGS[lang]["window_title"],
         html=html,
         width=720,
-        height=620,
+        height=660,
         js_api=WizardApi(),
     )
     webview.start()
     return state["result"]
+
+
+_WIZARD_STRINGS: dict[str, dict[str, str]] = {
+    "zh-CN": {
+        "window_title": "Fingerprint Lite — 首次启动",
+        "title": "欢迎使用 Fingerprint Lite",
+        "sub": "选择各项数据的存放位置。默认放在程序所在的磁盘上 —— 不会强制占用 C: 盘。",
+        "language": "语言",
+        "data": "数据",
+        "browser": "浏览器",
+        "temp": "临时文件",
+        "browse": "浏览…",
+        "data_hint": "数据库、Profile、配置、密钥与日志。",
+        "browser_hint": "Camoufox 浏览器安装与 GeoIP 数据库。",
+        "temp_hint": "下载与导入过程中的临时文件。",
+        "engine_legend": "浏览器引擎（固定版本，SHA256 校验）",
+        "src_download": "现在下载（约 470 MB）",
+        "src_zip": "使用我已有的官方 ZIP 安装",
+        "src_skip": "暂时跳过",
+        "zip_placeholder": "camoufox-...-win.x86_64.zip 的路径",
+        "choose": "选择…",
+        "existing_legend": "在以下位置发现已有数据",
+        "choice_migrate": "把数据搬到新的数据文件夹（保留旧副本，密钥不变）",
+        "choice_fresh": "在这里全新开始（旧数据原位保留，使用自己的密钥）",
+        "existing_hint": "两种方式都不会删除或改写数据 —— 只是决定程序用哪一份。",
+        "start": "开始",
+        "use_defaults": "使用默认位置",
+        "cancel": "取消并退出",
+        "working": "处理中…",
+        "downloading": "正在下载",
+        "reading_zip": "正在读取 ZIP",
+        "verifying": "正在验证 SHA256…",
+        "extracting": "正在解压并安装…",
+        "preparing": "正在准备 GeoIP…",
+        "done": "完成。",
+        "failed": "失败。",
+    },
+    "en": {
+        "window_title": "Fingerprint Lite — first start",
+        "title": "Welcome to Fingerprint Lite",
+        "sub": "Choose where things should live. The defaults sit on this program's own disk — nothing is forced onto C:.",
+        "language": "Language",
+        "data": "Data",
+        "browser": "Browser",
+        "temp": "Temp",
+        "browse": "Browse…",
+        "data_hint": "Database, profiles, configuration, secret key and logs.",
+        "browser_hint": "The Camoufox browser install and GeoIP databases.",
+        "temp_hint": "Temporary files during downloads and imports.",
+        "engine_legend": "Browser engine (fixed build, SHA256-verified)",
+        "src_download": "Download it now (about 470 MB)",
+        "src_zip": "Install from an official ZIP I have",
+        "src_skip": "Skip for now",
+        "zip_placeholder": "path to camoufox-...-win.x86_64.zip",
+        "choose": "Choose…",
+        "existing_legend": "Existing profiles found at",
+        "choice_migrate": "Move them to the new Data folder (the old copy is kept as a backup, keys unchanged)",
+        "choice_fresh": "Start fresh here (the old data stays where it is, with its own key)",
+        "existing_hint": "Nothing is deleted or rewritten either way — this just says which data the program should use.",
+        "start": "Start",
+        "use_defaults": "Use default locations",
+        "cancel": "Cancel and exit",
+        "working": "Working…",
+        "downloading": "Downloading",
+        "reading_zip": "Reading ZIP",
+        "verifying": "Verifying SHA256…",
+        "extracting": "Extracting and installing…",
+        "preparing": "Preparing GeoIP…",
+        "done": "Done.",
+        "failed": "Failed.",
+    },
+}
+
+WIZARD_LANGS = ("zh-CN", "en")
+
+
+def wizard_lang(environ: MutableMapping[str, str] | None = None) -> str:
+    """The dialog language: Simplified Chinese unless the OS speaks English.
+
+    Anything starting with ``zh`` gets ``zh-CN``; an explicitly English OS
+    locale gets ``en``; when nothing can be detected the default is ``zh-CN``.
+    The dialog itself lets the user switch either way.
+    """
+    import locale
+
+    env = os.environ if environ is None else environ
+    for key in ("LC_ALL", "LC_MESSAGES", "LANG", "LANGUAGE"):
+        value = (env.get(key) or "").lower()
+        if not value:
+            continue
+        if value.startswith("zh"):
+            return "zh-CN"
+        if value.startswith("en"):
+            return "en"
+    detected, _encoding = locale.getdefaultlocale()
+    if detected and detected.lower().startswith("en"):
+        return "en"
+    return "zh-CN"
 
 
 _WIZARD_HTML = """<!doctype html>
@@ -414,31 +515,32 @@ legend { color:#b8bdc7; padding:0 6px; }
 .actions { display:flex; gap:10px; margin-top:24px; }
 .error { color:#ff8a80; margin-top:12px; white-space:pre-wrap; }
 </style></head><body>
-<h1>Welcome to Fingerprint Lite</h1>
-<p class="sub">Choose where things should live. The defaults sit on this program's own disk — nothing is forced onto C:.</p>
-<div class="row"><label>Data</label><input id="data" type="text" value="__DATA__"><button onclick="browse('data')">Browse…</button></div>
-<div class="hint">Database, profiles, configuration, secret key and logs.</div>
-<div class="row"><label>Browser</label><input id="browser" type="text" value="__BROWSER__"><button onclick="browse('browser')">Browse…</button></div>
-<div class="hint">The Camoufox browser install and GeoIP databases.</div>
-<div class="row"><label>Temp</label><input id="temp" type="text" value="__TEMP__"><button onclick="browse('temp')">Browse…</button></div>
-<div class="hint">Temporary files during downloads and imports.</div>
-<fieldset><legend>Browser engine (fixed build, SHA256-verified)</legend>
-<label><input type="radio" name="src" value="download" checked> Download it now (about 470 MB)</label><br>
-<label><input type="radio" name="src" value="zip"> Install from an official ZIP I have</label>
-<div class="row" id="ziprow" style="display:none"><input id="zippath" type="text" placeholder="path to camoufox-...-win.x86_64.zip"><button onclick="pickzip()">Choose…</button></div>
-<label><input type="radio" name="src" value="skip"> Skip for now</label>
+<div class="row" style="margin-top:0"><label data-i18n="language">Language</label><div><label style="margin-right:12px"><input type="radio" name="lang" value="zh-CN"> 中文</label><label><input type="radio" name="lang" value="en"> English</label></div></div>
+<h1 data-i18n="title">Welcome to Fingerprint Lite</h1>
+<p class="sub" data-i18n="sub">Choose where things should live. The defaults sit on this program's own disk — nothing is forced onto C:.</p>
+<div class="row"><label data-i18n="data">Data</label><input id="data" type="text" value="__DATA__"><button onclick="browse('data')" data-i18n="browse">Browse…</button></div>
+<div class="hint" data-i18n="data_hint">Database, profiles, configuration, secret key and logs.</div>
+<div class="row"><label data-i18n="browser">Browser</label><input id="browser" type="text" value="__BROWSER__"><button onclick="browse('browser')" data-i18n="browse">Browse…</button></div>
+<div class="hint" data-i18n="browser_hint">The Camoufox browser install and GeoIP databases.</div>
+<div class="row"><label data-i18n="temp">Temp</label><input id="temp" type="text" value="__TEMP__"><button onclick="browse('temp')" data-i18n="browse">Browse…</button></div>
+<div class="hint" data-i18n="temp_hint">Temporary files during downloads and imports.</div>
+<fieldset><legend data-i18n="engine_legend">Browser engine (fixed build, SHA256-verified)</legend>
+<label><input type="radio" name="src" value="download" checked> <span data-i18n="src_download">Download it now (about 470 MB)</span></label><br>
+<label><input type="radio" name="src" value="zip"> <span data-i18n="src_zip">Install from an official ZIP I have</span></label>
+<div class="row" id="ziprow" style="display:none"><input id="zippath" type="text" data-i18n-ph="zip_placeholder" placeholder="path to camoufox-...-win.x86_64.zip"><button onclick="pickzip()" data-i18n="choose">Choose…</button></div>
+<label><input type="radio" name="src" value="skip"> <span data-i18n="src_skip">Skip for now</span></label>
 </fieldset>
 <div id="existingbox" style="display:none">
-<fieldset><legend>Existing profiles found at __EXISTING__</legend>
-<label><input type="radio" name="choice" value="migrate"> Move them to the new Data folder (the old copy is kept as a backup, keys unchanged)</label><br>
-<label><input type="radio" name="choice" value="fresh"> Start fresh here (the old data stays where it is, with its own key)</label>
-<div class="hint">Nothing is deleted or rewritten either way — this just says which data the program should use.</div>
+<fieldset><legend><span data-i18n="existing_legend">Existing profiles found at</span> __EXISTING__</legend>
+<label><input type="radio" name="choice" value="migrate"> <span data-i18n="choice_migrate">Move them to the new Data folder (the old copy is kept as a backup, keys unchanged)</span></label><br>
+<label><input type="radio" name="choice" value="fresh"> <span data-i18n="choice_fresh">Start fresh here (the old data stays where it is, with its own key)</span></label>
+<div class="hint" data-i18n="existing_hint">Nothing is deleted or rewritten either way — this just says which data the program should use.</div>
 </fieldset>
 </div>
 <div class="actions">
-<button class="primary" onclick="submitAll()">Start</button>
-<button onclick="useDefaults()">Use default locations</button>
-<button onclick="pywebview.api.cancel()">Cancel and exit</button>
+<button class="primary" onclick="submitAll()" data-i18n="start">Start</button>
+<button onclick="useDefaults()" data-i18n="use_defaults">Use default locations</button>
+<button onclick="pywebview.api.cancel()" data-i18n="cancel">Cancel and exit</button>
 </div>
 <div id="progress" style="display:none;margin-top:16px">
 <div id="plabel" style="color:#b8bdc7;font-size:13px;margin-bottom:6px">Working…</div>
@@ -448,6 +550,24 @@ legend { color:#b8bdc7; padding:0 6px; }
 </div>
 <div class="error" id="error"></div>
 <script>
+var STRINGS = __STRINGS__;
+var LANG = "__LANG__";
+function applyLang(lang) {
+  LANG = lang;
+  var dict = STRINGS[lang] || STRINGS["en"];
+  document.querySelectorAll('[data-i18n]').forEach(function (el) {
+    var v = dict[el.getAttribute('data-i18n')];
+    if (v) el.textContent = v;
+  });
+  document.querySelectorAll('[data-i18n-ph]').forEach(function (el) {
+    var v = dict[el.getAttribute('data-i18n-ph')];
+    if (v) el.placeholder = v;
+  });
+  document.querySelectorAll('input[name=lang]').forEach(function (r) { r.checked = (r.value === lang); });
+}
+document.querySelectorAll('input[name=lang]').forEach(function (r) {
+  r.addEventListener('change', function () { if (r.checked) applyLang(r.value); });
+});
 function browse(field) { pywebview.api.pick_folder(field).then(function (p) { if (p) document.getElementById(field).value = p; }); }
 function pickzip() { pywebview.api.pick_zip().then(function (p) { if (p) document.getElementById('zippath').value = p; }); }
 document.querySelectorAll('input[name=src]').forEach(function (r) {
@@ -466,7 +586,7 @@ function refreshExisting() {
   }
 }
 document.getElementById('data').addEventListener('input', refreshExisting);
-window.addEventListener('pywebviewready', refreshExisting);
+window.addEventListener('pywebviewready', function () { applyLang(LANG); refreshExisting(); });
 function payload() {
   var chosen = document.querySelector('input[name=choice]:checked');
   return {
@@ -480,20 +600,21 @@ function payload() {
 }
 function fmtMB(bytes) { return (bytes / 1048576).toFixed(1) + ' MB'; }
 function stageLabel(source, stage, downloaded, total) {
+  var dict = STRINGS[LANG] || STRINGS["en"];
   if (stage === 'downloading') {
-    var prefix = source === 'zip' ? 'Reading ZIP: ' : 'Downloading: ';
+    var prefix = (source === 'zip' ? dict.reading_zip : dict.downloading) + ': ';
     if (total > 0) {
       var pct = Math.floor((downloaded / total) * 100);
       return prefix + fmtMB(downloaded) + ' / ' + fmtMB(total) + ' (' + pct + '%)';
     }
     return prefix + fmtMB(downloaded);
   }
-  if (stage === 'verifying') return 'Verifying SHA256…';
-  if (stage === 'extracting') return 'Extracting and installing…';
-  if (stage === 'preparing') return 'Preparing GeoIP…';
-  if (stage === 'done') return 'Done.';
-  if (stage === 'failed') return 'Failed.';
-  return 'Working…';
+  if (stage === 'verifying') return dict.verifying;
+  if (stage === 'extracting') return dict.extracting;
+  if (stage === 'preparing') return dict.preparing;
+  if (stage === 'done') return dict.done;
+  if (stage === 'failed') return dict.failed;
+  return dict.working;
 }
 function pollProgress(source) {
   pywebview.api.progress().then(function (raw) {
