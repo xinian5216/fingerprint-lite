@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from collections.abc import MutableMapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,6 +28,10 @@ from typing import Any
 from loguru import logger
 
 from camoufox_pm import portable
+
+# Serializes Start presses within this process: the check-then-start below
+# must be atomic or two rapid clicks launch two installs into one folder.
+_START_LOCK = threading.Lock()
 
 ANSWERS_ENV = "CPM_WIZARD_ANSWERS_JSON"
 # The env var above is deliberately inert: nothing reads it. Automation passes
@@ -249,15 +254,7 @@ def _start_work(state: dict[str, Any], work: Any, *, with_geoip: bool, window: A
     live stage and byte counts. A second Start while one runs is refused —
     two concurrent installs would fight over the same Browser folder.
     """
-    import threading
-
     from camoufox_pm import browser_env
-
-    worker = state.get("worker")
-    if worker is not None and worker.is_alive():
-        return json.dumps({"ok": False, "error": "Setup is already running."})
-    state["ok"] = None
-    browser_env.reset_browser_progress()
 
     def run() -> None:
         try:
@@ -272,6 +269,7 @@ def _start_work(state: dict[str, Any], work: Any, *, with_geoip: bool, window: A
             state["result"] = result
             state["ok"] = True
         except Exception as exc:  # noqa: BLE001 - shown in the wizard, not swallowed
+            logger.exception("First-run setup failed")
             progress = browser_env.browser_progress()
             if progress["stage"] not in ("failed",):
                 browser_env._emit_progress("failed", error=str(exc))  # noqa: SLF001
@@ -280,8 +278,15 @@ def _start_work(state: dict[str, Any], work: Any, *, with_geoip: bool, window: A
         if state.get("ok") and window is not None:
             window.destroy()
 
-    thread = threading.Thread(target=run, daemon=True, name="wizard-setup")
-    state["worker"] = thread
+    with _START_LOCK:
+        worker = state.get("worker")
+        if worker is not None and worker.is_alive():
+            return json.dumps({"ok": False, "error": "Setup is already running."})
+        state["ok"] = None
+        state["error"] = None
+        browser_env.reset_browser_progress()
+        thread = threading.Thread(target=run, daemon=True, name="wizard-setup")
+        state["worker"] = thread
     thread.start()
     return json.dumps({"ok": True, "started": True})
 

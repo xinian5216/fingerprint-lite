@@ -336,6 +336,64 @@ def _asset_url() -> str:
     return f"https://github.com/{PINNED_REPO}/releases/download/v{pin_version_string()}/{name}"
 
 
+def _install_lock_path(root: Path) -> Path:
+    return Path(root) / ".install.lock"
+
+
+def hold_install_lock(root: Path) -> Any:
+    """Serialize browser installs into one root, across processes.
+
+    Two setups racing the same Browser folder (a double-clicked Start, two
+    wizard windows, an app restart mid-install) would otherwise extract over
+    each other and fail obscurely halfway through verification. The lock is
+    an OS file lock held open for the install duration, so a dead process
+    can never leave a stale lock behind: ``msvcrt`` on Windows, ``fcntl``
+    elsewhere. Raises :class:`BrowserInstallError` when another install
+    already holds it.
+    """
+    import contextlib
+    import sys
+
+    Path(root).mkdir(parents=True, exist_ok=True)
+    path = _install_lock_path(root)
+
+    @contextlib.contextmanager
+    def locked() -> Any:
+        with open(path, "a+b") as handle:
+            try:
+                if sys.platform == "win32":
+                    import msvcrt
+
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError as exc:
+                raise BrowserInstallError(
+                    "Another browser install is already running for this "
+                    "Browser folder. Wait for it to finish instead of starting "
+                    "a second one."
+                ) from exc
+            try:
+                yield
+            finally:
+                try:
+                    if sys.platform == "win32":
+                        import msvcrt
+
+                        handle.seek(0)
+                        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                    else:
+                        import fcntl
+
+                        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                except OSError:  # noqa: BLE001 - unlocking at cleanup is best-effort
+                    pass
+
+    return locked()
+
+
 def _install(replace: bool, source: str, local_zip: Path | None = None) -> Path:
     """Run the shared install and confirm the result, or explain the failure."""
     import tempfile
@@ -351,7 +409,8 @@ def _install(replace: bool, source: str, local_zip: Path | None = None) -> Path:
         # dir; putting that beside the install keeps both on the destination
         # disk.
         tempfile.tempdir = str(work)
-        _PinnedFetcher(local_zip=local_zip).install(replace=replace)
+        with hold_install_lock(root):
+            _PinnedFetcher(local_zip=local_zip).install(replace=replace)
     except Exception as exc:  # noqa: BLE001 - every failure becomes a clear message
         progress = browser_progress()
         _emit_progress("failed", progress["downloaded"], progress["total"], error=str(exc))

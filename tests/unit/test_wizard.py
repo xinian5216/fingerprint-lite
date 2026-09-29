@@ -258,6 +258,36 @@ def test_a_second_start_while_setup_runs_is_refused(tmp_path):
         state["worker"].join(timeout=10)
 
 
+def test_two_starts_at_the_same_instant_launch_only_once():
+    """The check-then-start must be atomic, not just sequential."""
+    import threading
+
+    release = threading.Event()
+    state: dict = {}
+    outcomes: list = []
+
+    def slow():
+        release.wait(timeout=10)
+        return None
+
+    def press():
+        outcomes.append(json.loads(wizard._start_work(state, slow, with_geoip=False)))
+
+    threads = [threading.Thread(target=press) for _ in range(8)]
+    try:
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+    finally:
+        release.set()
+        state["worker"].join(timeout=10)
+
+    started = [o for o in outcomes if o.get("started")]
+    refused = [o for o in outcomes if o.get("ok") is False]
+    assert len(started) == 1 and len(refused) == 7
+
+
 def test_a_worker_failure_is_reported_not_swallowed():
     """A setup crash lands in the progress snapshot the page polls."""
     from camoufox_pm import browser_env

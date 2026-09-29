@@ -492,3 +492,23 @@ def test_a_failed_install_reports_failed_and_keeps_the_error(camoufox_home, tmp_
     snapshot = browser_env.browser_progress()
     assert snapshot["stage"] == "failed"
     assert snapshot["error"]
+
+
+def test_a_second_install_into_the_same_root_is_refused(camoufox_home, tmp_path, monkeypatch):
+    """Two setups racing one Browser folder fail loudly instead of half each."""
+    browser_dir = tmp_path / "Browser"
+    browser_dir.mkdir()
+    offline = tmp_path / "zips"
+    offline.mkdir()
+    zip_path, digest = fake_zip(offline / "official-browser.zip")
+    monkeypatch.setattr(browser_env, "PINNED_SHA256", digest)
+    monkeypatch.setattr(browser_env, "_BROWSER_DIR", browser_dir)
+
+    with browser_env.hold_install_lock(browser_dir):
+        with pytest.raises(browser_env.BrowserInstallError) as excinfo:
+            browser_env.install_from_zip(zip_path)
+    assert "already running" in str(excinfo.value)
+
+    # The lock dies with its holder: a later install proceeds normally.
+    installed = browser_env.install_from_zip(zip_path)
+    assert installed.is_dir()
