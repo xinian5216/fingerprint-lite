@@ -226,13 +226,22 @@ def test_offline_zip_installs_into_the_chosen_browser_folder(
     tmp_path, protected_env, monkeypatch, camoufox_constants_restored
 ):
     import hashlib
+    import posixpath
     import zipfile
+
+    from camoufox import pkgman
+
+    # Same derivation as the product's launch_path() completeness check: the
+    # fixture must carry the platform executable, not a hardcoded .exe.
+    entry = pkgman.LAUNCH_FILE[pkgman.OS_NAME]
+    if pkgman.OS_NAME == "mac":
+        entry = posixpath.normpath(posixpath.join("Camoufox.app/Contents/Resources", entry))
 
     zips = tmp_path / "zips"
     zips.mkdir()
     zip_path = zips / "official.zip"
     with zipfile.ZipFile(zip_path, "w") as archive:
-        archive.writestr("camoufox.exe", b"payload")
+        archive.writestr(entry, b"payload")
     monkeypatch.setattr(
         browser_env, "PINNED_SHA256", hashlib.sha256(zip_path.read_bytes()).hexdigest()
     )
