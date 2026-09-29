@@ -218,9 +218,13 @@ def test_a_bad_path_is_reported_before_anything_is_written(tmp_path, protected_e
     assert not (tmp_path / "paths.env").exists()
 
 
-def test_the_dialog_language_defaults_to_chinese():
+def test_the_dialog_language_defaults_to_chinese(monkeypatch):
+    import locale as stdlib_locale
+
     assert wizard.wizard_lang({"LANG": "zh_CN.UTF-8"}) == "zh-CN"
     assert wizard.wizard_lang({"LANG": "en_US.UTF-8"}) == "en"
+    # Undetectable OS locale (e.g. a bare LANG=C container): the default wins.
+    monkeypatch.setattr(stdlib_locale, "getdefaultlocale", lambda: (None, None))
     assert wizard.wizard_lang({}) == "zh-CN"
 
 
