@@ -9,7 +9,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [0.1.0-alpha.1] - 2026-09-29
 
 First Fingerprint Lite Alpha, prepared for Windows x64 evaluation. This is a
-pre-release; no GitHub Release or tag is created by this preparation.
+pre-release, published as GitHub pre-release `v0.1.0-alpha.1` (not latest).
 
 ### Included
 - Windows 10/11 x64 portable application for local multi-profile browser
