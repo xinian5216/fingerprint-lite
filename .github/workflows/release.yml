@@ -29,6 +29,13 @@ jobs:
         run: |
           uv build --wheel
           uv build --sdist
+      - name: Decide prerelease flag from the tag name
+        id: prerelease
+        run: |
+          case "${{ github.ref_name }}" in
+            *-alpha*|*-beta*|*-rc*) echo "value=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "value=false" >> "$GITHUB_OUTPUT" ;;
+          esac
       - name: Attach artifacts to the GitHub Release
         uses: softprops/action-gh-release@v3
         with:
@@ -36,6 +43,10 @@ jobs:
             dist/*.whl
             dist/*.tar.gz
           generate_release_notes: true
+          # Alpha/beta/rc tags must never become a Stable (latest) Release;
+          # only plain version tags (e.g. v0.2.0) may do that.
+          prerelease: ${{ steps.prerelease.outputs.value == 'true' }}
+          make_latest: ${{ steps.prerelease.outputs.value != 'true' }}
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
         with:
