@@ -1,0 +1,49 @@
+name: Windows non-browser CI
+
+on:
+  push:
+    branches: [dev/windows-validation]
+  pull_request:
+    branches: [dev/windows-validation]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-non-browser-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  non-browser:
+    name: Non-browser (Python 3.12)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install locked dependencies
+        run: uv sync --locked --python 3.12 --extra dev
+
+      - name: Ruff check
+        run: uv run --locked ruff check src tests
+
+      - name: Ruff format check
+        run: uv run --locked ruff format --check src tests
+
+      - name: Mypy
+        run: uv run --locked mypy src/camoufox_pm
+
+      - name: Non-browser tests
+        env:
+          CPM_DB_PATH: ${{ runner.temp }}/camoufox-profile-manager-ci/profiles.db
+        run: uv run --locked pytest -m "not browser" --cov --cov-report=term-missing

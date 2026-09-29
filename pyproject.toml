@@ -1,0 +1,133 @@
+[project]
+name = "camoufox-profile-manager"
+version = "0.1.0-alpha.1"
+description = "Fingerprint Lite — a local profile manager for Camoufox"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Camoufox Profile Manager Contributors" }]
+keywords = [
+    "camoufox",
+    "antidetect",
+    "browser-fingerprint",
+    "playwright",
+    "fastapi",
+    "firefox",
+]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Framework :: FastAPI",
+    "Topic :: Internet :: WWW/HTTP :: Browsers",
+]
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.10",
+    "pydantic-settings>=2.6",
+    "sqlalchemy>=2.0",
+    "camoufox[geoip]>=0.5.4",
+    "playwright>=1.50,<1.61",
+    "python-dotenv>=1.0",
+    "python-multipart>=0.0.18",
+    "aiofiles>=24.1",
+    "cryptography>=44.0",
+    # argon2id password hashing for user accounts (OWASP first choice; memory-hard,
+    # unlike bcrypt, and without bcrypt's 72-byte input truncation).
+    "argon2-cffi>=23.1",
+    "loguru>=0.7",
+    "psutil>=6.1",
+    # socks so a SOCKS5 proxy can be checked, not only HTTP ones.
+    "httpx[socks]>=0.28",
+    "tzdata; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+desktop = ["pywebview>=5.0"]
+build = ["pywebview>=5.0", "pyinstaller>=6.0"]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+
+[project.scripts]
+camoufox-pm = "camoufox_pm.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/xinian5216/fingerprint-lite"
+Repository = "https://github.com/xinian5216/fingerprint-lite"
+Issues = "https://github.com/xinian5216/fingerprint-lite/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/camoufox_pm"]
+# The bundled web UI is generated (scripts/build_webui.py) and git-ignored, so
+# include it explicitly when building a wheel.
+artifacts = ["src/camoufox_pm/webui/**"]
+
+[tool.hatch.build.targets.sdist]
+# Ship source only — keep the huge web build artifacts out of the sdist.
+exclude = [
+    "/web/node_modules",
+    "/web/.next",
+    "/web/out",
+    "/src/camoufox_pm/webui",
+    "/dist",
+    "/.venv",
+    "/.mypy_cache",
+    "/.pytest_cache",
+    "/.ruff_cache",
+    # Local task notes are not project documentation or source-distribution content.
+    "/.planning",
+    "/data",
+    "/demo_data",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "W", "C4"]
+ignore = ["E501"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI dependency-injection helpers are called in argument defaults by design.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Header",
+    "fastapi.Path",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Body",
+    "fastapi.Security",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+# Test scratch lives in the project's .work folder, not the user's temp dir.
+addopts = "--basetemp=.work/pytest-tmp"
+markers = [
+    "browser: real Camoufox launch (opt-in, slow, requires 'camoufox fetch')",
+]
+
+[tool.mypy]
+packages = ["camoufox_pm"]
+ignore_missing_imports = true
+# Check our code only; third-party stubs (numpy via camoufox) can use newer syntax.
+follow_imports = "silent"
+
+[tool.coverage.run]
+source = ["src/camoufox_pm"]

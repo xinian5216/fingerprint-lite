@@ -1,0 +1,155 @@
+# Command-line reference
+
+## `camoufox-pm`
+
+Runs the API and the web UI as one process on one port, and opens the UI.
+
+```
+usage: camoufox-pm [-h] [--host HOST] [--port PORT] [--no-browser] [--desktop]
+                   [--portable] {browser,user,unlock,leases} ...
+```
+
+| Flag | Default | What it does |
+| ---- | ------- | ------------ |
+| `--host HOST` | `127.0.0.1` (or `CPM_HOST`) | Bind address. Anything other than loopback exposes the API to your network — set `CPM_API_KEY` first. |
+| `--port PORT` | `8000` (or `CPM_PORT`) | Port to serve on. |
+| `--no-browser` | off | Do not open a browser tab on start. Use when running as a service. |
+| `--desktop` | off | Open a native window instead of a browser tab. Needs the `desktop` extra. |
+| `--portable` | off (on in the packaged app) | Keep the database, profiles, config and logs in a `Data` folder beside the program. |
+| `-h`, `--help` | | Show the built-in help. |
+
+The flags win over the environment, and the settings the app reports (including
+on the Settings screen) reflect what it actually bound to.
+
+```bash
+camoufox-pm                          # http://localhost:8000, opens a browser
+camoufox-pm --port 9000 --no-browser # run headless on another port
+camoufox-pm --desktop                # native window
+```
+
+To stop it, press `Ctrl+C`. Any browsers it launched are closed with it.
+
+## `camoufox-pm browser`
+
+Prepares the fixed Camoufox browser build the program runs. Installs always
+verify the pinned SHA256 — there is no way to skip the check and no automatic
+upgrade to a newer build. The same verification and the same atomic install
+apply whether the bytes come from the network or from a local official ZIP.
+
+```bash
+camoufox-pm browser status             # what is installed, and where
+camoufox-pm browser install            # reuse, else the Browser folder, else download
+camoufox-pm browser install <zip>      # install from an official ZIP you downloaded
+camoufox-pm browser install --download # retry the online download explicitly
+```
+
+If a download fails — including a slow or blocked connection to GitHub
+releases, which some networks throttle — drop the official ZIP into the
+`Browser` folder next to the program and restart, or run
+`browser install <zip>`: the program does not keep retrying on its own. The
+download itself honours the usual `HTTPS_PROXY`/`ALL_PROXY` environment
+variables. A failed download or extraction never touches an existing browser or
+the profile data under `Data/`.
+
+## `camoufox-pm user`
+
+Manages web UI login accounts. **Creating the first account turns login on**:
+from then on the API requires a session (or the API key), and the web UI shows
+a login screen. Removing the last account turns login back off. Accounts live
+in the CLI on purpose — there is no registration endpoint, so creating one
+requires shell access to the host, and the first user can be created without a
+chicken-and-egg lockout.
+
+```
+usage: camoufox-pm user {add,passwd,remove,list} ...
+```
+
+| Command | What it does |
+| ------- | ------------ |
+| `user add <name>` | Create an account. Prompts twice for the password (min 8 characters); it is argon2id-hashed before it touches the database and never appears in argv, the environment, or logs. |
+| `user passwd <name>` | Change an account's password. Existing sessions stay valid. |
+| `user remove <name>` | Delete an account and its open sessions. Warns when it was the last one. |
+| `user list` | List account names and creation times. Never shows hashes. |
+
+`add` and `passwd` take `--password-stdin` to read the password from the first
+line of stdin instead of prompting — for provisioning scripts and containers:
+
+```bash
+camoufox-pm user add alice                            # interactive
+openssl rand -base64 18 | camoufox-pm user add ci-bot --password-stdin
+```
+
+The commands work against `CPM_DB_PATH` and take effect immediately, even while
+the server is running — the guard checks the database per request.
+
+## `camoufox-pm leases` and `camoufox-pm unlock`
+
+Every browser launch takes a lease on its profile so that two instances sharing
+a database cannot open the same one at once (see
+[Running more than one instance](../README.md#running-more-than-one-instance)).
+These two commands are the operator's view of that.
+
+```bash
+camoufox-pm leases                  # id, name, holder, expiry, live or expired
+camoufox-pm unlock <profile-id>     # force-release; prompts unless --yes
+```
+
+`leases` lists every lease in `CPM_DB_PATH`, including expired ones that nobody
+has taken over yet. A holder id is `<hostname>:<pid>:<uuid>`, so it names the
+machine and the process to look for.
+
+`unlock` clears a lease whatever it says, and prints who held it. It exists for
+the case a lease cannot resolve on its own: a machine that died in a way its
+lease could not notice, or one that is verifiably gone and whose TTL you do not
+want to wait out. Check `leases` first — force-releasing a lease that is still
+live lets a second browser open a profile that is already running, which is the
+corruption the lease prevents. There is deliberately no API endpoint for it.
+
+## `camoufox fetch`
+
+Downloads the Camoufox browser (~300 MB). This comes from Camoufox itself, not
+from this project, and is required before any profile can be launched.
+
+```bash
+camoufox fetch          # installed release
+uv run camoufox fetch   # from source
+```
+
+Without it the app still runs: you can create and edit profiles, import and export
+whole-profile archives from the web UI, and browse the device presets. Profile
+grouping remains available through the REST API and persisted group values are retained. In
+Phase 2A, the dedicated Groups page, the Profiles table's Group column, and the
+profile editor's group selector are hidden.
+Launching a browser and pinning a preset to a device are the two things that
+need the binary — the Settings screen says so when it is missing.
+
+## Scripts
+
+These live in `scripts/` and are for working on the project, not for daily use.
+
+| Command | What it does |
+| ------- | ------------ |
+| `python scripts/build_webui.py` | Builds the Next.js UI as a static export and copies it into the package, so `camoufox-pm` can serve it. Needs Node.js 20.9+. |
+| `python scripts/build_desktop.py` | Builds a standalone desktop bundle with PyInstaller that needs neither Python nor Node. See [accessibility-roadmap.md](accessibility-roadmap.md). |
+| `python scripts/build_portable.py` | Builds the desktop bundle, then assembles the Windows portable edition (`FingerprintLite-<version>-windows-x64` + zip) with its `Data`/`Browser` folders and README. Refuses a bundle missing an entry point or the web UI. |
+| `python examples/seed_demo.py` | Creates a handful of demo profiles for a look around. |
+
+## Running from source without the console script
+
+```bash
+uv run python -m camoufox_pm.main
+```
+
+This starts the API with reload enabled and serves the UI if one has been built.
+It reads `CPM_HOST` and `CPM_PORT` and takes no flags — `camoufox-pm` is the
+supported entry point.
+
+## Environment variables
+
+Every setting is also an environment variable with the `CPM_` prefix; they are
+listed in the [README](../README.md#configuration). A `.env` file in the working
+directory is read automatically.
+
+```bash
+CPM_PORT=9000 CPM_API_KEY=secret camoufox-pm --no-browser
+```
