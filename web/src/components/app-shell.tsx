@@ -7,12 +7,13 @@ import { CalendarClock, LogOut, Settings, Users } from 'lucide-react'
 
 import { useAuth } from '@/components/login-gate'
 import { systemAPI } from '@/lib/api'
+import { useLang, useT } from '@/lib/i18n'
 
 const NAV = [
-  { href: '/', label: 'Profiles', icon: Users },
-  { href: '/schedules/', label: 'Schedules', icon: CalendarClock },
-  { href: '/settings/', label: 'Settings', icon: Settings },
-]
+  { href: '/', key: 'nav.profiles', icon: Users },
+  { href: '/schedules/', key: 'nav.schedules', icon: CalendarClock },
+  { href: '/settings/', key: 'nav.settings', icon: Settings },
+] as const
 
 /** Fixed rail + scrollable work area. The rail never scrolls. */
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -22,6 +23,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [address, setAddress] = useState<string | null>(null)
   const [version, setVersion] = useState<string | null>(null)
   const { username, logout } = useAuth()
+  const t = useT()
+  const { lang, setLang } = useLang()
 
   useEffect(() => {
     // Report where the server actually is rather than assuming loopback.
@@ -42,7 +45,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
 
         <nav className="flex flex-col gap-px p-2">
-          {NAV.map(({ href, label, icon: Icon }) => {
+          {NAV.map(({ href, key, icon: Icon }) => {
             const target = href.replace(/\/+$/, '') || '/'
             const active = current === target
             return (
@@ -57,13 +60,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 }`}
               >
                 <Icon size={15} strokeWidth={1.75} className={active ? 'text-signal' : ''} />
-                {label}
+                {t(key)}
               </Link>
             )
           })}
         </nav>
 
         <div className="mt-auto">
+          <div className="flex items-center gap-1 border-t border-line px-4 py-2">
+            {(['zh-CN', 'en'] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setLang(option)}
+                aria-pressed={lang === option}
+                className={`rounded px-1.5 py-0.5 font-mono text-[11px] transition-colors ${
+                  lang === option ? 'bg-raised text-ink' : 'text-ink-faint hover:text-ink'
+                }`}
+              >
+                {option === 'zh-CN' ? '中文' : 'EN'}
+              </button>
+            ))}
+          </div>
           {username && (
             <div className="flex items-center justify-between gap-2 border-t border-line px-4 py-2">
               <span className="truncate text-ink-dim" title={username}>
@@ -72,8 +90,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <button
                 type="button"
                 onClick={logout}
-                aria-label="Log out"
-                title="Log out"
+                aria-label={t('nav.logout')}
+                title={t('nav.logout')}
                 className="rounded p-1 text-ink-faint transition-colors hover:bg-raised hover:text-ink"
               >
                 <LogOut size={14} strokeWidth={1.75} />

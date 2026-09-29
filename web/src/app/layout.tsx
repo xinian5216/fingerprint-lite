@@ -4,6 +4,7 @@ import { IBM_Plex_Mono, IBM_Plex_Sans } from 'next/font/google'
 import { AppShell } from '@/components/app-shell'
 import { LoginGate } from '@/components/login-gate'
 import { ToastProvider } from '@/components/toast'
+import { LangProvider } from '@/lib/i18n'
 import './globals.css'
 
 // next/font downloads and self-hosts these at build time, so the app has no
@@ -29,12 +30,14 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${plexSans.variable} ${plexMono.variable}`}>
+    <html lang="zh-CN" className={`${plexSans.variable} ${plexMono.variable}`}>
       <body>
         <ToastProvider>
-          <LoginGate>
-            <AppShell>{children}</AppShell>
-          </LoginGate>
+          <LangProvider>
+            <LoginGate>
+              <AppShell>{children}</AppShell>
+            </LoginGate>
+          </LangProvider>
         </ToastProvider>
       </body>
     </html>

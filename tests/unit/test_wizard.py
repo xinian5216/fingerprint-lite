@@ -419,6 +419,7 @@ def test_the_real_window_passes_pywebview_an_object_with_exposed_methods(
 
         def create_window(self, _title, **kwargs):
             captured["js_api"] = kwargs["js_api"]
+            captured["html"] = kwargs["html"]
             return FakeWindow()
 
         def start(self):
@@ -433,6 +434,13 @@ def test_the_real_window_passes_pywebview_an_object_with_exposed_methods(
         assert callable(getattr(api, method, None)), (
             f"PyWebView cannot expose {method}: js_api must be an object with bound methods"
         )
+
+    html = captured["html"]
+    assert "__STRINGS__" not in html and "__LANG__" not in html
+    assert "Welcome to Fingerprint Lite" in html
+    # Both dictionaries ride along as JSON (escaped); the page swaps them in.
+    assert '"zh-CN"' in html and '"use_defaults"' in html
+    assert "开始" in wizard._WIZARD_STRINGS["zh-CN"]["start"]
 
 
 def test_folder_and_zip_pickers_use_the_created_window(tmp_path, protected_env, monkeypatch):
