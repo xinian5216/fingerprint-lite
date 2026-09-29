@@ -6,6 +6,7 @@ import json
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from loguru import logger
 from pydantic import ValidationError
@@ -365,6 +366,27 @@ class DatabaseManager:
         self._connection.execute(
             "UPDATE profiles SET proxy_check = ? WHERE id = ?",
             (record.model_dump_json() if record else None, profile_id),
+        )
+        self._connection.commit()
+
+    async def set_browser_settings(self, profile_id: str, browser_settings: Any) -> None:
+        """Write only the browser settings, leaving every other column alone.
+
+        Targeted write for the same reason as ``set_proxy_check``: the caller
+        just spent time on the network, and writing a whole Profile back would
+        revert anything edited meanwhile. Used for the proxy-country language
+        fill, which only ever runs on an explicit user action.
+        """
+        from camoufox_pm.core.models import BrowserSettings
+
+        payload = (
+            browser_settings.model_dump()
+            if isinstance(browser_settings, BrowserSettings)
+            else browser_settings
+        )
+        self._connection.execute(
+            "UPDATE profiles SET browser_settings = ? WHERE id = ?",
+            (json.dumps(payload), profile_id),
         )
         self._connection.commit()
 
@@ -984,6 +1006,9 @@ class StorageManager:
 
     async def set_proxy_check(self, profile_id: str, record: ProxyCheckRecord | None) -> None:
         await self.db.set_proxy_check(profile_id, record)
+
+    async def set_browser_settings(self, profile_id: str, browser_settings: Any) -> None:
+        await self.db.set_browser_settings(profile_id, browser_settings)
 
     async def set_launch_pin(
         self, profile_id: str, fingerprint: dict | None, last_used: datetime

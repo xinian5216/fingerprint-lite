@@ -6,6 +6,7 @@ down beyond that: defaults follow the program's disk, and existing data keeps
 its original secret key with no silent overwrite anywhere.
 """
 
+import json
 import os
 import sqlite3
 import types
@@ -217,6 +218,65 @@ def test_a_bad_path_is_reported_before_anything_is_written(tmp_path, protected_e
     assert not (tmp_path / "paths.env").exists()
 
 
+def test_the_dialog_language_defaults_to_chinese(monkeypatch):
+    import locale as stdlib_locale
+
+    assert wizard.wizard_lang({"LANG": "zh_CN.UTF-8"}) == "zh-CN"
+    assert wizard.wizard_lang({"LANG": "en_US.UTF-8"}) == "en"
+    # Undetectable OS locale (e.g. a bare LANG=C container): the default wins.
+    monkeypatch.setattr(stdlib_locale, "getdefaultlocale", lambda: (None, None))
+    assert wizard.wizard_lang({}) == "zh-CN"
+
+
+def test_the_rendered_dialog_carries_both_languages():
+    html = wizard._WIZARD_HTML
+    assert "__STRINGS__" in html and "__LANG__" in html
+    assert "欢迎使用 Fingerprint Lite" in wizard._WIZARD_STRINGS["zh-CN"]["title"]
+    assert wizard._WIZARD_STRINGS["en"]["start"] == "Start"
+    assert wizard._WIZARD_STRINGS["zh-CN"]["start"] == "开始"
+    assert set(wizard._WIZARD_STRINGS["zh-CN"]) == set(wizard._WIZARD_STRINGS["en"])
+
+
+def test_a_second_start_while_setup_runs_is_refused(tmp_path):
+    """Two concurrent installs would fight over the same Browser folder."""
+    import threading
+
+    release = threading.Event()
+    state: dict = {}
+
+    def slow():
+        release.wait(timeout=10)
+        return None
+
+    first = wizard._start_work(state, slow, with_geoip=False)
+    try:
+        assert json.loads(first)["started"] is True
+        second = wizard._start_work(state, slow, with_geoip=False)
+        assert json.loads(second)["ok"] is False
+    finally:
+        release.set()
+        state["worker"].join(timeout=10)
+
+
+def test_a_worker_failure_is_reported_not_swallowed():
+    """A setup crash lands in the progress snapshot the page polls."""
+    from camoufox_pm import browser_env
+
+    state: dict = {}
+
+    def broken():
+        raise portable.PortableError("disk went away")
+
+    assert json.loads(wizard._start_work(state, broken, with_geoip=False))["started"] is True
+    state["worker"].join(timeout=10)
+
+    assert state["ok"] is False
+    snapshot = browser_env.browser_progress()
+    assert snapshot["stage"] == "failed"
+    assert snapshot["error"] == "disk went away"
+    browser_env.reset_browser_progress()
+
+
 # ---------------------------------------------------------------------------
 # The browser source
 # ---------------------------------------------------------------------------
@@ -363,6 +423,7 @@ def test_the_real_window_passes_pywebview_an_object_with_exposed_methods(
 
         def create_window(self, _title, **kwargs):
             captured["js_api"] = kwargs["js_api"]
+            captured["html"] = kwargs["html"]
             return FakeWindow()
 
         def start(self):
@@ -373,10 +434,17 @@ def test_the_real_window_passes_pywebview_an_object_with_exposed_methods(
     wizard._open_window(tmp_path, environ=os.environ)
 
     api = captured["js_api"]
-    for method in ("pick_folder", "pick_zip", "submit", "use_defaults", "cancel"):
+    for method in ("pick_folder", "pick_zip", "submit", "use_defaults", "progress", "cancel"):
         assert callable(getattr(api, method, None)), (
             f"PyWebView cannot expose {method}: js_api must be an object with bound methods"
         )
+
+    html = captured["html"]
+    assert "__STRINGS__" not in html and "__LANG__" not in html
+    assert "Welcome to Fingerprint Lite" in html
+    # Both dictionaries ride along as JSON (escaped); the page swaps them in.
+    assert '"zh-CN"' in html and '"use_defaults"' in html
+    assert "开始" in wizard._WIZARD_STRINGS["zh-CN"]["start"]
 
 
 def test_folder_and_zip_pickers_use_the_created_window(tmp_path, protected_env, monkeypatch):

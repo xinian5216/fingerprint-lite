@@ -3,6 +3,8 @@
 import { useEffect, useRef } from 'react'
 import { X } from 'lucide-react'
 
+import { useT } from '@/lib/i18n'
+
 interface ModalProps {
   open: boolean
   title: string
@@ -104,9 +106,7 @@ export function Modal({ open, title, subtitle, onClose, children, footer, width 
             <h2 className="text-[14px] font-semibold">{title}</h2>
             {subtitle && <p className="mt-0.5 text-ink-dim">{subtitle}</p>}
           </div>
-          <button onClick={onClose} aria-label="Close" className="btn btn-ghost -mr-2 h-7 w-7 p-0">
-            <X size={15} strokeWidth={2} />
-          </button>
+          <ModalCloseButton onClose={onClose} />
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
@@ -136,11 +136,13 @@ export function ConfirmDialog({
   open,
   title,
   body,
-  confirmLabel = 'Confirm',
+  confirmLabel,
   destructive = false,
   onConfirm,
   onCancel,
 }: ConfirmProps) {
+  const t = useT()
+  const label = confirmLabel ?? t('mo.confirm')
   return (
     <Modal
       open={open}
@@ -150,19 +152,28 @@ export function ConfirmDialog({
       footer={
         <>
           <button className="btn btn-default" onClick={onCancel}>
-            Cancel
+            {t('mo.cancel')}
           </button>
           <button
             className={destructive ? 'btn btn-danger' : 'btn btn-primary'}
             onClick={onConfirm}
             autoFocus
           >
-            {confirmLabel}
+            {label}
           </button>
         </>
       }
     >
       <p className="text-ink-dim">{body}</p>
     </Modal>
+  )
+}
+
+function ModalCloseButton({ onClose }: { onClose: () => void }) {
+  const t = useT()
+  return (
+    <button onClick={onClose} aria-label={t('mo.close')} className="btn btn-ghost -mr-2 h-7 w-7 p-0">
+      <X size={15} strokeWidth={2} />
+    </button>
   )
 }

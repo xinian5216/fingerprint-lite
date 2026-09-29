@@ -34,15 +34,16 @@ import {
   type Profile,
   type ProxyCheckRecord,
 } from '@/lib/api'
+import { useLang, useT } from '@/lib/i18n'
 
 type SortKey = 'name' | 'id' | 'os' | 'status' | 'last_used'
 
-const COLUMNS: { key: SortKey; label: string; className?: string }[] = [
-  { key: 'name', label: 'Name' },
-  { key: 'id', label: 'ID' },
-  { key: 'os', label: 'OS' },
-  { key: 'status', label: 'Status' },
-  { key: 'last_used', label: 'Last used' },
+const COLUMN_KEYS: { key: SortKey; labelKey: string; className?: string }[] = [
+  { key: 'name', labelKey: 'pl.colName' },
+  { key: 'id', labelKey: 'pl.colId' },
+  { key: 'os', labelKey: 'pl.colOs' },
+  { key: 'status', labelKey: 'pl.colStatus' },
+  { key: 'last_used', labelKey: 'pl.colLastUsed' },
 ]
 
 export default function ProfilesPage() {
@@ -72,6 +73,8 @@ export default function ProfilesPage() {
   }>(null)
   const toast = useToast()
   const archiveRef = useRef<HTMLInputElement>(null)
+  const t = useT()
+  const { lang } = useLang()
 
   const loadProfiles = useCallback(async () => {
     try {
@@ -220,7 +223,7 @@ export default function ProfilesPage() {
         await profilesAPI.startProfile(profile.id)
         await Promise.all([loadRunning(), loadProfiles()])
       } catch (err) {
-        toast('error', 'Could not launch browser', String(err))
+        toast('error', t('pl.launchErr'), String(err))
       }
     })
   }
@@ -231,7 +234,7 @@ export default function ProfilesPage() {
         await profilesAPI.closeProfile(profile.id)
         await loadRunning()
       } catch (err) {
-        toast('error', 'Could not close browser', String(err))
+        toast('error', t('pl.closeErr'), String(err))
       }
     })
   }
@@ -248,18 +251,14 @@ export default function ProfilesPage() {
   }
 
   async function exportArchive(profile: Profile) {
-    toast('info', 'Packing the profile…', 'Cookies and history make this take a moment.')
+    toast('info', t('pl.packingTitle'), t('pl.packingBody'))
     try {
       const blob = await profilesAPI.exportArchive(profile.id)
       const safe = profile.name.replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^-|-$/g, '')
       download(blob, `${safe || profile.id}.camoufox.zip`)
-      toast(
-        'ok',
-        'Profile exported',
-        'The archive holds session cookies and the proxy password — keep it like a password.',
-      )
+      toast('ok', t('pl.exportedTitle'), t('pl.exportedBody'))
     } catch (err) {
-      toast('error', 'Could not export the profile', String(err))
+      toast('error', t('pl.exportErr'), String(err))
     }
   }
 
@@ -269,20 +268,20 @@ export default function ProfilesPage() {
     if (!file) return
     try {
       const profile = await profilesAPI.importArchive(file)
-      toast('ok', 'Profile imported', profile.name)
+      toast('ok', t('pl.importedTitle'), profile.name)
       loadProfiles()
     } catch (err) {
-      toast('error', 'Could not import the profile', String(err))
+      toast('error', t('pl.importErr'), String(err))
     }
   }
 
   async function clone(profile: Profile) {
     try {
       await profilesAPI.cloneProfile(profile.id, `${profile.name} copy`)
-      toast('ok', 'Profile cloned', `${profile.name} copy`)
+      toast('ok', t('pl.clonedTitle'), `${profile.name} copy`)
       loadProfiles()
     } catch (err) {
-      toast('error', 'Could not clone profile', String(err))
+      toast('error', t('pl.cloneErr'), String(err))
     }
   }
 
@@ -313,7 +312,7 @@ export default function ProfilesPage() {
       )
       return record
     } catch (err) {
-      toast('error', 'Could not check the proxy', String(err))
+      toast('error', t('pl.checkErr'), String(err))
       return null
     } finally {
       setCheckingProxies((current) => {
@@ -347,7 +346,7 @@ export default function ProfilesPage() {
       for (let next = queue.shift(); next; next = queue.shift()) {
         const record = await checkProxy(next)
         if (!record) unchecked += 1
-        else if (readProxyCheck(record).tone === 'ok') clean += 1
+        else if (readProxyCheck(record, lang).tone === 'ok') clean += 1
         else flagged += 1
       }
     })
@@ -356,23 +355,28 @@ export default function ProfilesPage() {
     // Worded from the same rule the dots use, so a red row is never counted as
     // an answer just because the proxy replied.
     const parts = [
-      flagged ? `${flagged} need attention` : null,
-      unchecked ? `${unchecked} could not be checked` : null,
+      flagged ? t('pl.summaryNeedAttention', { n: flagged }) : null,
+      unchecked ? t('pl.summaryUnchecked', { n: unchecked }) : null,
     ].filter(Boolean)
 
     if (parts.length)
-      toast('error', parts.join(', '), `of ${total} selected. The rows carry the detail.`)
-    else toast('ok', `${clean} ${clean === 1 ? 'proxy is' : 'proxies are'} healthy`)
+      toast('error', t('pl.summaryTitle', { parts: parts.join(', ') }), t('pl.summaryErr', { total }))
+    else toast('ok', clean === 1 ? t('pl.summaryOkSingle') : t('pl.summaryOk', { n: clean }))
+  }
+
+  /** English plural marker; Chinese needs none. */
+  function plural(n: number): string {
+    return lang === 'en' && n !== 1 ? 's' : ''
   }
 
   function askDelete(profile: Profile) {
     setConfirm({
-      title: 'Delete profile',
-      body: `"${profile.name}" and its browser data will be removed. This cannot be undone.`,
-      label: 'Delete',
+      title: t('pl.delTitle'),
+      body: t('pl.delBody', { name: profile.name }),
+      label: t('pl.delLabel'),
       run: async () => {
         await profilesAPI.deleteProfile(profile.id)
-        toast('ok', 'Profile deleted', profile.name)
+        toast('ok', t('pl.deleted'), profile.name)
         setSelected((current) => {
           const next = new Set(current)
           next.delete(profile.id)
@@ -385,13 +389,14 @@ export default function ProfilesPage() {
 
   function askBulkDelete() {
     const count = selected.size
+    const s = plural(count)
     setConfirm({
-      title: `Delete ${count} profile${count === 1 ? '' : 's'}`,
-      body: 'The selected profiles and their browser data will be removed. This cannot be undone.',
-      label: 'Delete',
+      title: t('pl.bulkDelTitle', { n: count, s }),
+      body: t('pl.bulkDelBody'),
+      label: t('pl.delLabel'),
       run: async () => {
         for (const id of selected) await profilesAPI.deleteProfile(id)
-        toast('ok', `Deleted ${count} profile${count === 1 ? '' : 's'}`)
+        toast('ok', t('pl.bulkDeleted', { n: count, s }))
         setSelected(new Set())
         loadProfiles()
       },
@@ -406,16 +411,14 @@ export default function ProfilesPage() {
    */
   function askClearGeography() {
     const ids = profiles.filter((p) => selected.has(p.id) && hasGeography(p)).map((p) => p.id)
+    const s = plural(ids.length)
     setConfirm({
-      title: `Clear geography of ${ids.length} profile${ids.length === 1 ? '' : 's'}`,
-      body:
-        'The stored timezone and coordinates are unset, so Camoufox derives both — and the ' +
-        'WebRTC address — from where each profile\'s proxy comes out, as a profile created ' +
-        'today does. Languages and the pinned machine are untouched.',
-      label: 'Clear',
+      title: t('pl.clearGeoTitle', { n: ids.length, s }),
+      body: t('pl.clearGeoBody'),
+      label: t('pl.clearGeoLabel'),
       run: async () => {
         const result = await profilesAPI.clearGeography(ids)
-        toast('ok', `Cleared ${result.cleared.length} profile${result.cleared.length === 1 ? '' : 's'}`)
+        toast('ok', t('pl.cleared', { n: result.cleared.length, s: plural(result.cleared.length) }))
         setSelected(new Set())
         loadProfiles()
       },
@@ -423,10 +426,11 @@ export default function ProfilesPage() {
   }
 
   function askCloseAll() {
+    const s = plural(running.size)
     setConfirm({
-      title: 'Close all browsers',
-      body: `${running.size} running browser${running.size === 1 ? '' : 's'} will be closed.`,
-      label: 'Close all',
+      title: t('pl.closeAllTitle'),
+      body: t('pl.closeAllBody', { n: running.size, s }),
+      label: t('pl.closeAllLabel'),
       run: async () => {
         const result = await browsersAPI.closeAll()
         toast('ok', result.message)
@@ -442,14 +446,14 @@ export default function ProfilesPage() {
     try {
       await action.run()
     } catch (err) {
-      toast('error', 'Action failed', String(err))
+      toast('error', t('pl.actionFailed'), String(err))
     }
   }
 
   return (
     <>
       <header className="sticky top-0 z-20 flex h-[52px] items-center gap-3 border-b border-line bg-canvas/85 px-5 backdrop-blur">
-        <h1 className="text-[14px] font-semibold">Profiles</h1>
+        <h1 className="text-[14px] font-semibold">{t('pl.title')}</h1>
         <span className="font-mono text-ink-faint">{visible.length}</span>
 
         <div className="relative ml-3 w-[240px]">
@@ -459,10 +463,10 @@ export default function ProfilesPage() {
           />
           <input
             className="field h-[30px] pl-7"
-            placeholder="Search name or ID"
+            placeholder={t('pl.searchPh')}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            aria-label="Search profiles"
+            aria-label={t('pl.searchAria')}
           />
         </div>
 
@@ -470,26 +474,26 @@ export default function ProfilesPage() {
           className="field h-[30px] w-[132px]"
           value={statusFilter}
           onChange={(event) => setStatusFilter(event.target.value)}
-          aria-label="Filter by status"
+          aria-label={t('pl.filterAria')}
         >
-          <option value="all">All statuses</option>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
-          <option value="blocked">Blocked</option>
-          <option value="maintenance">Maintenance</option>
+          <option value="all">{t('pl.optAll')}</option>
+          <option value="active">{t('pl.optActive')}</option>
+          <option value="inactive">{t('pl.optInactive')}</option>
+          <option value="blocked">{t('pl.optBlocked')}</option>
+          <option value="maintenance">{t('pl.optMaintenance')}</option>
         </select>
 
         <div className="ml-auto flex items-center gap-2">
           {running.size > 0 && (
             <button className="btn btn-default" onClick={askCloseAll}>
               <Square size={12} fill="currentColor" />
-              Close {running.size} running
+              {t('pl.closeRunning', { n: running.size })}
             </button>
           )}
           <button
             className="btn btn-ghost"
             onClick={() => archiveRef.current?.click()}
-            title="Import a profile archive"
+            title={t('pl.importTitle')}
           >
             <PackageOpen size={14} />
           </button>
@@ -508,14 +512,14 @@ export default function ProfilesPage() {
             }}
           >
             <Plus size={14} strokeWidth={2.5} />
-            New profile
+            {t('pl.new')}
           </button>
         </div>
       </header>
 
       {selected.size > 0 && (
         <div className="flex items-center gap-3 border-b border-line bg-raised px-5 py-2">
-          <span>{selected.size} selected</span>
+          <span>{t('pl.selected', { n: selected.size })}</span>
           {selectedWithProxy > 0 && (
             <button
               className="btn btn-default h-7"
@@ -524,22 +528,22 @@ export default function ProfilesPage() {
             >
               <Globe size={13} />
               {checkingProxies.size > 0
-                ? `Checking… (${checkingProxies.size})`
-                : `Check proxies (${selectedWithProxy})`}
+                ? t('pl.checking', { n: checkingProxies.size })
+                : t('pl.checkProxies', { n: selectedWithProxy })}
             </button>
           )}
           {selectedWithGeography > 0 && (
             <button className="btn btn-default h-7" onClick={askClearGeography}>
               <Globe size={13} />
-              Clear geography ({selectedWithGeography})
+              {t('pl.clearGeo', { n: selectedWithGeography })}
             </button>
           )}
           <button className="btn btn-danger h-7" onClick={askBulkDelete}>
             <Trash2 size={13} />
-            Delete
+            {t('pl.delete')}
           </button>
           <button className="btn btn-ghost h-7" onClick={() => setSelected(new Set())}>
-            Clear
+            {t('pl.clearSel')}
           </button>
         </div>
       )}
@@ -547,21 +551,21 @@ export default function ProfilesPage() {
       {error ? (
         <EmptyState
           icon={<Users size={18} />}
-          title="Cannot reach the API"
+          title={t('pl.cannotApi')}
           body={error}
           action={
             <button className="btn btn-default" onClick={loadProfiles}>
-              Retry
+              {t('pl.retry')}
             </button>
           }
         />
       ) : loading ? (
-        <p className="px-5 py-8 text-ink-faint">Loading…</p>
+        <p className="px-5 py-8 text-ink-faint">{t('pl.loading')}</p>
       ) : profiles.length === 0 ? (
         <EmptyState
           icon={<Users size={18} />}
-          title="No profiles yet"
-          body="A profile is one isolated browser identity — its own fingerprint, proxy, cookies and storage. Create one to get started."
+          title={t('pl.noProfiles')}
+          body={t('pl.noProfilesBody')}
           action={
             <button
               className="btn btn-primary"
@@ -571,15 +575,15 @@ export default function ProfilesPage() {
               }}
             >
               <Plus size={14} strokeWidth={2.5} />
-              Create your first profile
+              {t('pl.createFirst')}
             </button>
           }
         />
       ) : visible.length === 0 ? (
         <EmptyState
           icon={<Search size={18} />}
-          title="No matches"
-          body="No profile matches the current search and filter."
+          title={t('pl.noMatches')}
+          body={t('pl.noMatchesBody')}
           action={
             <button
               className="btn btn-default"
@@ -588,7 +592,7 @@ export default function ProfilesPage() {
                 setStatusFilter('all')
               }}
             >
-              Clear filters
+              {t('pl.clearFilters')}
             </button>
           }
         />
@@ -613,19 +617,19 @@ export default function ProfilesPage() {
                   }
                 />
               </th>
-              {COLUMNS.map((column) => (
+              {COLUMN_KEYS.map((column) => (
                 <th key={column.key} className="py-2 pr-4 font-medium">
                   <button
                     className="inline-flex items-center gap-1 hover:text-ink"
                     onClick={() => toggleSort(column.key)}
                   >
-                    {column.label}
+                    {t(column.labelKey)}
                     {sortKey === column.key &&
                       (sortDir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />)}
                   </button>
                 </th>
               ))}
-              <th className="py-2 pr-4 font-medium">Proxy</th>
+              <th className="py-2 pr-4 font-medium">{t('pl.colProxy')}</th>
               <th className="w-[104px] py-2 pr-5" />
             </tr>
           </thead>
@@ -648,7 +652,7 @@ export default function ProfilesPage() {
                       type="checkbox"
                       className="accent-signal"
                       checked={selected.has(profile.id)}
-                      aria-label={`Select ${profile.name}`}
+                      aria-label={t('pl.selectRow', { name: profile.name })}
                       onChange={() =>
                         setSelected((current) => {
                           const next = new Set(current)
@@ -668,7 +672,7 @@ export default function ProfilesPage() {
                   <td className="py-2.5 pr-4">
                     <StatusCell status={profile.status} running={isRunning} />
                   </td>
-                  <td className="py-2.5 pr-4 text-ink-dim">{formatLastUsed(profile.last_used)}</td>
+                  <td className="py-2.5 pr-4 text-ink-dim">{formatLastUsed(profile.last_used, lang)}</td>
                   <td className="py-2.5 pr-4">
                     <ProxyCell
                       profile={profile}
@@ -686,12 +690,12 @@ export default function ProfilesPage() {
                         {isRunning ? (
                           <>
                             <Square size={11} fill="currentColor" />
-                            Stop
+                            {t('pl.stop')}
                           </>
                         ) : (
                           <>
                             <Play size={11} fill="currentColor" />
-                            Run
+                            {t('pl.run')}
                           </>
                         )}
                       </button>
@@ -699,7 +703,7 @@ export default function ProfilesPage() {
                       <div className="relative">
                         <button
                           className="btn btn-ghost h-7 w-7 p-0"
-                          aria-label={`Actions for ${profile.name}`}
+                          aria-label={t('pl.actionsFor', { name: profile.name })}
                           aria-haspopup="menu"
                           aria-expanded={menuFor === profile.id}
                           data-menu-trigger={profile.id}
@@ -737,7 +741,7 @@ export default function ProfilesPage() {
                           >
                             <MenuItem
                               icon={<Pencil size={13} />}
-                              label="Edit"
+                              label={t('pl.mEdit')}
                               autoFocus
                               onClick={() => {
                                 setEditing(profile)
@@ -747,7 +751,7 @@ export default function ProfilesPage() {
                             />
                             <MenuItem
                               icon={<Copy size={13} />}
-                              label="Duplicate"
+                              label={t('pl.mDuplicate')}
                               onClick={() => {
                                 clone(profile)
                                 closeMenu(profile.id)
@@ -755,7 +759,7 @@ export default function ProfilesPage() {
                             />
                             <MenuItem
                               icon={<Globe size={13} />}
-                              label="Check proxy"
+                              label={t('pl.mCheckProxy')}
                               onClick={() => {
                                 // The set holds ids, not a count, so a second
                                 // check of the same row would clear the first
@@ -766,7 +770,7 @@ export default function ProfilesPage() {
                             />
                             <MenuItem
                               icon={<PackageOpen size={13} />}
-                              label="Export…"
+                              label={t('pl.mExport')}
                               onClick={() => {
                                 exportArchive(profile)
                                 closeMenu(profile.id)
@@ -774,7 +778,7 @@ export default function ProfilesPage() {
                             />
                             <MenuItem
                               icon={<Trash2 size={13} />}
-                              label="Delete"
+                              label={t('pl.mDelete')}
                               danger
                               onClick={() => {
                                 askDelete(profile)
@@ -804,7 +808,7 @@ export default function ProfilesPage() {
               className="btn btn-ghost h-7 w-7 p-0"
               disabled={currentPage === 1}
               onClick={() => setPage(currentPage - 1)}
-              aria-label="Previous page"
+              aria-label={t('pl.prevPage')}
             >
               <ChevronLeft size={15} />
             </button>
@@ -815,7 +819,7 @@ export default function ProfilesPage() {
               className="btn btn-ghost h-7 w-7 p-0"
               disabled={currentPage === totalPages}
               onClick={() => setPage(currentPage + 1)}
-              aria-label="Next page"
+              aria-label={t('pl.nextPage')}
             >
               <ChevronRight size={15} />
             </button>
@@ -835,7 +839,7 @@ export default function ProfilesPage() {
         title={confirm?.title ?? ''}
         body={confirm?.body ?? ''}
         confirmLabel={confirm?.label}
-        destructive={confirm?.label === 'Delete'}
+        destructive={confirm?.label === t('pl.delLabel')}
         onConfirm={runConfirmed}
         onCancel={() => setConfirm(null)}
       />
@@ -852,6 +856,7 @@ export default function ProfilesPage() {
 function ProxyCell({ profile, checking }: { profile: Profile; checking: boolean }) {
   const configured = formatProxyString(profile.proxy_config) || '—'
   const check = profile.proxy_check
+  const t = useT()
 
   return (
     // Bounded, because a table cell grows to fit its content: an unreachable
@@ -862,7 +867,7 @@ function ProxyCell({ profile, checking }: { profile: Profile; checking: boolean 
       {checking ? (
         <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-ink-faint">
           <span className="signal-pulse h-1.5 w-1.5 rounded-full bg-signal" />
-          Checking…
+          {t('pl.proxyChecking')}
         </div>
       ) : check ? (
         <ProxyResult check={check} />
@@ -872,7 +877,8 @@ function ProxyCell({ profile, checking }: { profile: Profile; checking: boolean 
 }
 
 function ProxyResult({ check }: { check: ProxyCheckRecord }) {
-  const { tone, label, detail } = readProxyCheck(check)
+  const { lang } = useLang()
+  const { tone, label, detail } = readProxyCheck(check, lang)
   const dot = tone === 'ok' ? 'bg-ok' : tone === 'warn' ? 'bg-warn' : 'bg-danger'
   // Latency and country only mean something when the proxy answered; when it did
   // not, the reason is the only thing worth the space.
@@ -887,17 +893,18 @@ function ProxyResult({ check }: { check: ProxyCheckRecord }) {
       {/* min-w-0 so this is the part that gives way: a flex item will not shrink
           below its content without it, and the truncation never happens. */}
       <span className="min-w-0 truncate font-mono">{parts.filter(Boolean).join(' · ')}</span>
-      <span className="shrink-0 text-ink-dim/70">· {formatLastUsed(check.checked_at)}</span>
+      <span className="shrink-0 text-ink-dim/70">· {formatLastUsed(check.checked_at, lang)}</span>
     </div>
   )
 }
 
 function StatusCell({ status, running }: { status: string; running: boolean }) {
+  const t = useT()
   if (running) {
     return (
       <span className="inline-flex items-center gap-1.5 text-signal">
         <span className="signal-pulse h-1.5 w-1.5 rounded-full bg-signal" />
-        Running
+        {t('pl.statusRunning')}
       </span>
     )
   }

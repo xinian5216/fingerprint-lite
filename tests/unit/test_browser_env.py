@@ -444,3 +444,51 @@ def test_launch_refuses_while_the_pinned_browser_is_missing(camoufox_home, monke
     manager = bs.BrowserSessionManager()
     with pytest.raises(browser_env.BrowserInstallError):
         asyncio.run(manager.launch("p1", {}))
+
+
+# ---------------------------------------------------------------------------
+# Install progress: observed stages and byte counts, same verified install
+# ---------------------------------------------------------------------------
+
+
+def test_a_zip_install_reports_bytes_stages_and_done(camoufox_home, tmp_path, monkeypatch):
+    """Progress is observed, not reimplemented: bytes move, stages advance."""
+    offline = tmp_path / "Browser"
+    offline.mkdir()
+    zip_path, digest = fake_zip(offline / "official-browser.zip")
+    monkeypatch.setattr(browser_env, "PINNED_SHA256", digest)
+    seen = []
+    browser_env.set_browser_progress_listener(seen.append)
+
+    installed = browser_env.install_from_zip(zip_path)
+
+    assert installed.is_dir()
+    stages = [event["stage"] for event in seen]
+    assert stages[0] == "downloading"
+    assert "verifying" in stages
+    assert "extracting" in stages
+    assert stages[-1] == "done"
+    downloads = [event for event in seen if event["stage"] == "downloading"]
+    assert downloads[-1]["downloaded"] == downloads[-1]["total"] == zip_path.stat().st_size
+    snapshot = browser_env.browser_progress()
+    assert snapshot["stage"] == "done" and snapshot["error"] is None
+    browser_env.set_browser_progress_listener(None)
+
+
+def test_a_failed_install_reports_failed_and_keeps_the_error(camoufox_home, tmp_path, monkeypatch):
+    from camoufox import multiversion
+
+    offline = tmp_path / "Browser"
+    offline.mkdir()
+    zip_path, digest = fake_zip(offline / "official-browser.zip")
+    monkeypatch.setattr(browser_env, "PINNED_SHA256", digest)
+    monkeypatch.setattr(
+        multiversion, "unzip", lambda *a, **k: (_ for _ in ()).throw(OSError("disk went away"))
+    )
+
+    with pytest.raises(browser_env.BrowserInstallError):
+        browser_env.install_from_zip(zip_path)
+
+    snapshot = browser_env.browser_progress()
+    assert snapshot["stage"] == "failed"
+    assert snapshot["error"]

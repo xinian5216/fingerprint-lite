@@ -513,7 +513,10 @@ export function formatProxyString(proxy?: ProxyConfig | null): string {
  * proxy answered — SOCKS credentials that Camoufox will drop means the launch
  * is wrong, which is not a milder problem than an unreachable proxy.
  */
-export function readProxyCheck(check: ProxyCheckRecord): {
+import type { Lang } from '@/lib/i18n'
+import { render } from '@/lib/i18n'
+
+export function readProxyCheck(check: ProxyCheckRecord, lang: Lang = 'zh-CN'): {
   tone: 'ok' | 'warn' | 'danger'
   label: string
   detail: string
@@ -524,13 +527,13 @@ export function readProxyCheck(check: ProxyCheckRecord): {
   // address is long enough to be cut off mid-address, taking the country and the
   // latency with it. The tooltip is the only place left to read them.
   const lines = [
-    check.reachable ? 'Proxy answered' : 'Proxy did not answer',
+    check.reachable ? render('api.answered', lang) : render('api.didNotAnswer', lang),
     check.error,
     check.ip,
     [check.country, check.timezone].filter(Boolean).join(' · ') || null,
     check.latency_ms !== null ? `${check.latency_ms} ms` : null,
     ...notes.map((finding) => finding.message),
-    `Checked ${formatLastUsed(check.checked_at).toLowerCase()}`,
+    `${render('api.checkedPrefix', lang)}${formatLastUsed(check.checked_at, lang).toLowerCase()}`,
   ].filter(Boolean)
 
   const tone = !check.reachable || worst?.level === 'error' ? 'danger' : worst ? 'warn' : 'ok'
@@ -540,26 +543,75 @@ export function readProxyCheck(check: ProxyCheckRecord): {
     // Green and amber differ only in hue at six pixels, which is exactly the
     // pair a deuteranope cannot separate. The table's other indicator pairs its
     // dot with a word; this one says the word to screen readers.
-    label: tone === 'ok' ? 'Healthy' : tone === 'warn' ? 'Needs attention' : 'Failing',
+    label: tone === 'ok' ? render('api.healthy', lang) : tone === 'warn' ? render('api.needsAttention', lang) : render('api.failing', lang),
     detail: lines.join('\n'),
   }
 }
 
-export function formatLastUsed(value?: string | null): string {
-  if (!value) return 'Never'
+export function formatLastUsed(value?: string | null, lang: Lang = 'zh-CN'): string {
+  if (!value) return render('api.never', lang)
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Never'
+  if (Number.isNaN(date.getTime())) return render('api.never', lang)
 
   const seconds = Math.round((Date.now() - date.getTime()) / 1000)
-  if (seconds < 60) return 'Just now'
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
-  if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`
-  return date.toLocaleDateString()
+  if (seconds < 60) return render('api.justNow', lang)
+  if (seconds < 3600) return render('api.minAgo', lang, { n: Math.floor(seconds / 60) })
+  if (seconds < 86400) return render('api.hourAgo', lang, { n: Math.floor(seconds / 3600) })
+  if (seconds < 604800) return render('api.dayAgo', lang, { n: Math.floor(seconds / 86400) })
+  return date.toLocaleDateString(lang === 'zh-CN' ? 'zh-CN' : 'en-US')
 }
 
 export const OS_LABELS: Record<string, string> = {
   windows: 'Windows',
   macos: 'macOS',
   linux: 'Linux',
+}
+
+/**
+ * Prefill for the Languages field from a proxy's exit country. Mirrors the
+ * backend locale table; used only when the user explicitly asks (the "Use
+ * proxy language" button), never applied silently.
+ */
+export const LANGUAGES_FOR_COUNTRY: Record<string, string> = {
+  US: 'en-US, en',
+  GB: 'en-GB, en',
+  CA: 'en-CA, en, fr-CA, fr',
+  AU: 'en-AU, en',
+  DE: 'de-DE, de, en',
+  AT: 'de-AT, de, en',
+  CH: 'de-CH, fr-CH, it-CH, de, fr, it, en',
+  FR: 'fr-FR, fr, en',
+  BE: 'fr-BE, nl-BE, de-BE, fr, nl, en',
+  ES: 'es-ES, es, en',
+  MX: 'es-MX, es, en',
+  AR: 'es-AR, es, en',
+  IT: 'it-IT, it, en',
+  PT: 'pt-PT, pt, en',
+  BR: 'pt-BR, pt, en',
+  NL: 'nl-NL, nl, en',
+  SE: 'sv-SE, sv, en',
+  NO: 'nb-NO, nb, no, en',
+  DK: 'da-DK, da, en',
+  FI: 'fi-FI, fi, sv, en',
+  PL: 'pl-PL, pl, en',
+  CZ: 'cs-CZ, cs, en',
+  GR: 'el-GR, el, en',
+  RU: 'ru-RU, ru, en-US',
+  UA: 'uk-UA, uk, ru, en',
+  TR: 'tr-TR, tr, en',
+  IL: 'he-IL, he, en',
+  AE: 'ar-AE, ar, en',
+  CN: 'zh-CN, zh, en',
+  TW: 'zh-TW, zh, en',
+  HK: 'zh-HK, zh, en, zh-CN',
+  SG: 'en-SG, zh-SG, ms-SG, ta-SG, en',
+  JP: 'ja-JP, ja, en',
+  KR: 'ko-KR, ko, en',
+  IN: 'en-IN, hi-IN, hi, en',
+  TH: 'th-TH, th, en',
+  VN: 'vi-VN, vi, en',
+  ID: 'id-ID, id, en',
+  MY: 'ms-MY, ms, en',
+  PH: 'en-PH, fil-PH, fil, en',
+  ZA: 'en-ZA, en, af',
 }
