@@ -6,6 +6,7 @@ down beyond that: defaults follow the program's disk, and existing data keeps
 its original secret key with no silent overwrite anywhere.
 """
 
+import json
 import os
 import sqlite3
 import types
@@ -215,6 +216,46 @@ def test_a_bad_path_is_reported_before_anything_is_written(tmp_path, protected_e
     with pytest.raises(portable.DataDirNotWritable):
         wizard.apply_answers(tmp_path, answers, environ=os.environ)
     assert not (tmp_path / "paths.env").exists()
+
+
+def test_a_second_start_while_setup_runs_is_refused(tmp_path):
+    """Two concurrent installs would fight over the same Browser folder."""
+    import threading
+
+    release = threading.Event()
+    state: dict = {}
+
+    def slow():
+        release.wait(timeout=10)
+        return None
+
+    first = wizard._start_work(state, slow, with_geoip=False)
+    try:
+        assert json.loads(first)["started"] is True
+        second = wizard._start_work(state, slow, with_geoip=False)
+        assert json.loads(second)["ok"] is False
+    finally:
+        release.set()
+        state["worker"].join(timeout=10)
+
+
+def test_a_worker_failure_is_reported_not_swallowed():
+    """A setup crash lands in the progress snapshot the page polls."""
+    from camoufox_pm import browser_env
+
+    state: dict = {}
+
+    def broken():
+        raise portable.PortableError("disk went away")
+
+    assert json.loads(wizard._start_work(state, broken, with_geoip=False))["started"] is True
+    state["worker"].join(timeout=10)
+
+    assert state["ok"] is False
+    snapshot = browser_env.browser_progress()
+    assert snapshot["stage"] == "failed"
+    assert snapshot["error"] == "disk went away"
+    browser_env.reset_browser_progress()
 
 
 # ---------------------------------------------------------------------------

@@ -242,6 +242,50 @@ def run_wizard(
     return _open_window(Path(program_dir), environ)
 
 
+def _start_work(state: dict[str, Any], work: Any, *, with_geoip: bool, window: Any = None) -> str:
+    """Run the setup on a worker thread so the window can report progress.
+
+    The bridge call returns at once; the page polls ``progress()`` for the
+    live stage and byte counts. A second Start while one runs is refused —
+    two concurrent installs would fight over the same Browser folder.
+    """
+    import threading
+
+    from camoufox_pm import browser_env
+
+    worker = state.get("worker")
+    if worker is not None and worker.is_alive():
+        return json.dumps({"ok": False, "error": "Setup is already running."})
+    state["ok"] = None
+    browser_env.reset_browser_progress()
+
+    def run() -> None:
+        try:
+            result = work()
+            if with_geoip and result is not None and result.browser_path is not None:
+                # The GeoIP database the proxy checks need, fetched while the
+                # wizard still shows progress. Best-effort by design: a missing
+                # database only limits proxy location checks, and the app's
+                # background preparation retries it after the wizard closes.
+                browser_env._emit_progress("preparing")  # noqa: SLF001 - same package
+                browser_env.ensure_geoip()
+            state["result"] = result
+            state["ok"] = True
+        except Exception as exc:  # noqa: BLE001 - shown in the wizard, not swallowed
+            progress = browser_env.browser_progress()
+            if progress["stage"] not in ("failed",):
+                browser_env._emit_progress("failed", error=str(exc))  # noqa: SLF001
+            state["ok"] = False
+            state["error"] = str(exc)
+        if state.get("ok") and window is not None:
+            window.destroy()
+
+    thread = threading.Thread(target=run, daemon=True, name="wizard-setup")
+    state["worker"] = thread
+    thread.start()
+    return json.dumps({"ok": True, "started": True})
+
+
 def _open_window(program_dir: Path, environ: MutableMapping[str, str] | None = None):
     """The wizard window itself: collect the choice, apply it, close.
 
@@ -282,31 +326,36 @@ def _open_window(program_dir: Path, environ: MutableMapping[str, str] | None = N
         )
 
     def submit(payload: str) -> str:
-        try:
-            state["result"] = apply_answers(
-                program_dir, _answers_from(json.loads(payload)), environ=environ
-            )
-        except Exception as exc:  # noqa: BLE001 - shown in the wizard, not swallowed
-            return json.dumps({"ok": False, "error": str(exc)})
-        if window is not None:
-            window.destroy()
-        return json.dumps({"ok": True})
+        return _start_work(
+            state,
+            lambda: apply_answers(program_dir, _answers_from(json.loads(payload)), environ=environ),
+            with_geoip=True,
+            window=window,
+        )
 
     def use_defaults_api(payload: str) -> str:
         data = json.loads(payload)
-        try:
-            state["result"] = use_defaults(
+        return _start_work(
+            state,
+            lambda: use_defaults(
                 program_dir, environ=environ, browser_source=data.get("browser_source", "skip")
-            )
-        except Exception as exc:  # noqa: BLE001
-            return json.dumps({"ok": False, "error": str(exc)})
-        if window is not None:
-            window.destroy()
-        return json.dumps({"ok": True})
+            ),
+            with_geoip=True,
+            window=window,
+        )
 
     def cancel() -> None:
         if window is not None:
             window.destroy()
+
+    def progress() -> str:
+        """The install progress snapshot for the UI poll loop."""
+        from camoufox_pm import browser_env
+
+        snapshot = browser_env.browser_progress()
+        snapshot["done"] = snapshot["stage"] in ("done", "failed")
+        snapshot["ok"] = state.get("ok")
+        return json.dumps(snapshot)
 
     class WizardApi:
         """PyWebView discovers bound object methods, not keys in a dict."""
@@ -322,6 +371,9 @@ def _open_window(program_dir: Path, environ: MutableMapping[str, str] | None = N
 
         def use_defaults(self, payload: str) -> str:
             return use_defaults_api(payload)
+
+        def progress(self) -> str:
+            return progress()
 
         def cancel(self) -> None:
             cancel()
@@ -388,6 +440,12 @@ legend { color:#b8bdc7; padding:0 6px; }
 <button onclick="useDefaults()">Use default locations</button>
 <button onclick="pywebview.api.cancel()">Cancel and exit</button>
 </div>
+<div id="progress" style="display:none;margin-top:16px">
+<div id="plabel" style="color:#b8bdc7;font-size:13px;margin-bottom:6px">Working…</div>
+<div style="height:8px;border-radius:4px;background:#23272f;overflow:hidden">
+<div id="pbar" style="height:100%;width:0%;background:#ff6b35"></div>
+</div>
+</div>
 <div class="error" id="error"></div>
 <script>
 function browse(field) { pywebview.api.pick_folder(field).then(function (p) { if (p) document.getElementById(field).value = p; }); }
@@ -420,18 +478,53 @@ function payload() {
     data_choice: chosen ? chosen.value : null
   };
 }
+function fmtMB(bytes) { return (bytes / 1048576).toFixed(1) + ' MB'; }
+function stageLabel(source, stage, downloaded, total) {
+  if (stage === 'downloading') {
+    var prefix = source === 'zip' ? 'Reading ZIP: ' : 'Downloading: ';
+    if (total > 0) {
+      var pct = Math.floor((downloaded / total) * 100);
+      return prefix + fmtMB(downloaded) + ' / ' + fmtMB(total) + ' (' + pct + '%)';
+    }
+    return prefix + fmtMB(downloaded);
+  }
+  if (stage === 'verifying') return 'Verifying SHA256…';
+  if (stage === 'extracting') return 'Extracting and installing…';
+  if (stage === 'preparing') return 'Preparing GeoIP…';
+  if (stage === 'done') return 'Done.';
+  if (stage === 'failed') return 'Failed.';
+  return 'Working…';
+}
+function pollProgress(source) {
+  pywebview.api.progress().then(function (raw) {
+    var p = JSON.parse(raw);
+    document.getElementById('progress').style.display = 'block';
+    document.getElementById('plabel').textContent = stageLabel(source, p.stage, p.downloaded, p.total);
+    var bar = document.getElementById('pbar');
+    bar.style.width = p.total > 0 ? Math.floor((p.downloaded / p.total) * 100) + '%' : (p.stage === 'done' ? '100%' : '12%');
+    if (!p.done) {
+      setTimeout(function () { pollProgress(source); }, 300);
+    } else if (p.ok === false) {
+      document.getElementById('error').textContent = p.error || 'Setup failed.';
+    }
+  });
+}
 function submitAll() {
-  document.getElementById('error').textContent = 'Working…';
+  document.getElementById('error').textContent = '';
+  var source = document.querySelector('input[name=src]:checked').value;
   pywebview.api.submit(JSON.stringify(payload())).then(function (raw) {
     var res = JSON.parse(raw);
-    if (!res.ok) document.getElementById('error').textContent = res.error;
+    if (!res.ok) { document.getElementById('error').textContent = res.error; return; }
+    if (res.started) pollProgress(source);
   });
 }
 function useDefaults() {
-  document.getElementById('error').textContent = 'Working…';
-  pywebview.api.use_defaults(JSON.stringify({ browser_source: document.querySelector('input[name=src]:checked').value })).then(function (raw) {
+  document.getElementById('error').textContent = '';
+  var source = document.querySelector('input[name=src]:checked').value;
+  pywebview.api.use_defaults(JSON.stringify({ browser_source: source })).then(function (raw) {
     var res = JSON.parse(raw);
-    if (!res.ok) document.getElementById('error').textContent = res.error;
+    if (!res.ok) { document.getElementById('error').textContent = res.error; return; }
+    if (res.started) pollProgress(source);
   });
 }
 </script>

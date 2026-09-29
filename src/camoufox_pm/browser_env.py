@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import shutil
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -56,6 +55,16 @@ REQUIRED_BROWSER_SPACE = 2 * 1024 * 1024 * 1024
 
 _DOWNLOAD_FAILED = False
 _BROWSER_DIR: Path | None = None
+
+# Browser-install progress for the first-start wizard (and any other UI).
+#
+# The installer itself is camoufox's — digest check, atomic folder, cleanup —
+# so this only *observes*: byte counts come from its own progress hook,
+# stage names from the wrapper points around it. Guarded by a lock because
+# the wizard runs the install on a worker thread while the UI polls.
+_PROGRESS_LOCK = threading.Lock()
+_PROGRESS: dict[str, Any] = {"stage": "idle", "downloaded": 0, "total": 0, "error": None}
+_PROGRESS_LISTENERS: list[Any] = []
 
 
 def use_browser_root(browser_dir: Path) -> None:
@@ -114,6 +123,40 @@ def reset_install_state() -> None:
 
 def download_failed() -> bool:
     return _DOWNLOAD_FAILED
+
+
+def reset_browser_progress() -> None:
+    """Clear the install progress snapshot (test hygiene, fresh wizard runs)."""
+    with _PROGRESS_LOCK:
+        _PROGRESS.update({"stage": "idle", "downloaded": 0, "total": 0, "error": None})
+
+
+def browser_progress() -> dict[str, Any]:
+    """A copy of the current install progress for UI polling."""
+    with _PROGRESS_LOCK:
+        return dict(_PROGRESS)
+
+
+def set_browser_progress_listener(listener: Any | None) -> None:
+    """An optional callback invoked with each progress snapshot (tests, UI push)."""
+    with _PROGRESS_LOCK:
+        _PROGRESS_LISTENERS.clear()
+        if listener is not None:
+            _PROGRESS_LISTENERS.append(listener)
+
+
+def _emit_progress(
+    stage: str, downloaded: int = 0, total: int = 0, error: str | None = None
+) -> None:
+    with _PROGRESS_LOCK:
+        _PROGRESS.update({"stage": stage, "downloaded": downloaded, "total": total, "error": error})
+        snapshot = dict(_PROGRESS)
+        listeners = list(_PROGRESS_LISTENERS)
+    for listener in listeners:
+        try:
+            listener(snapshot)
+        except Exception:  # noqa: BLE001 - progress must never break the install
+            logger.warning("Browser progress listener failed")
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +238,17 @@ def browser_status() -> BrowserStatus:
 # ---------------------------------------------------------------------------
 
 
+def _announce(stage: str, func: Any) -> Any:
+    """Wrap an installer step so its start is reported before delegating."""
+
+    def announced(*args: Any, **kwargs: Any) -> Any:
+        progress = browser_progress()
+        _emit_progress(stage, progress["downloaded"], progress["total"])
+        return func(*args, **kwargs)
+
+    return announced
+
+
 class _PinnedFetcher:
     """Serves the pinned install request from a URL or a local ZIP.
 
@@ -215,26 +269,57 @@ class _PinnedFetcher:
             sha256=PINNED_SHA256,
         )
         self._fetcher = CamoufoxFetcher(selected_version=pin)
-        # The real downloader, kept aside: download_file is a staticmethod, so
-        # this is the plain function — binding it would smuggle in an extra
-        # argument the function does not take.
-        self._real_download = CamoufoxFetcher.download_file
         if self.local_zip is not None:
             self._fetcher._url = str(self.local_zip)  # noqa: SLF001 - display + source only
 
     def download_file(self, file: Any, url: str) -> Any:
         if self.local_zip is None:
-            return self._real_download(file, url)
+            from camoufox.pkgman import CamoufoxFetcher, webdl
+
+            # Tests replace CamoufoxFetcher.download_file with a stub to
+            # exercise the online path without network; a replaced attribute
+            # is a plain function where the stock one is a staticmethod, so
+            # the stub keeps working and only the real download gets
+            # progress reporting.
+            if not isinstance(CamoufoxFetcher.__dict__.get("download_file"), staticmethod):
+                result = CamoufoxFetcher.download_file(file, url)
+                _emit_progress("downloading", 0, 0)
+                return result
+            # The real downloader, with its own progress hook instead of the
+            # console bar: bytes and Content-Length come from the response, so
+            # no HTTP logic is reimplemented here.
+            _emit_progress("downloading", 0, 0)
+
+            def report(downloaded: int, total: int) -> None:
+                _emit_progress("downloading", downloaded, total)
+
+            return webdl(url, buffer=file, bar=False, progress_callback=report)
+        total = self.local_zip.stat().st_size
+        _emit_progress("downloading", 0, total)
+        copied = 0
         with open(self.local_zip, "rb") as source:
-            shutil.copyfileobj(source, file)
+            while chunk := source.read(1 << 20):
+                file.write(chunk)
+                copied += len(chunk)
+                _emit_progress("downloading", copied, total)
         return file
 
     def install(self, replace: bool = False) -> None:
         # Point the installer at our byte source, whatever it is; the inherited
         # install() then runs the full verified flow (digest check, atomic
         # versioned folder, Firefox profile dir) exactly as an online install.
+        # Stage labels are observed, not reimplemented: the wrappers below only
+        # announce the phase before delegating to camoufox's own functions.
+        from camoufox import multiversion
+
         self._fetcher.download_file = self.download_file  # type: ignore[method-assign]
-        self._fetcher.install(replace=replace)
+        real_verify, real_unzip = multiversion.verify_sha256, multiversion.unzip
+        try:
+            multiversion.verify_sha256 = _announce("verifying", real_verify)  # type: ignore[method-assign]
+            multiversion.unzip = _announce("extracting", real_unzip)  # type: ignore[method-assign]
+            self._fetcher.install(replace=replace)
+        finally:
+            multiversion.verify_sha256, multiversion.unzip = real_verify, real_unzip
 
     @property
     def url(self) -> str:
@@ -258,6 +343,7 @@ def _install(replace: bool, source: str, local_zip: Path | None = None) -> Path:
     root = default_offline_dir()
     work = root / ".tmp"
     previous_temp = tempfile.tempdir
+    reset_browser_progress()
     try:
         portable.check_free_space(root, REQUIRED_BROWSER_SPACE, "the browser install")
         work.mkdir(parents=True, exist_ok=True)
@@ -267,6 +353,8 @@ def _install(replace: bool, source: str, local_zip: Path | None = None) -> Path:
         tempfile.tempdir = str(work)
         _PinnedFetcher(local_zip=local_zip).install(replace=replace)
     except Exception as exc:  # noqa: BLE001 - every failure becomes a clear message
+        progress = browser_progress()
+        _emit_progress("failed", progress["downloaded"], progress["total"], error=str(exc))
         raise BrowserInstallError(
             f"Installing the pinned browser from {source} failed: {exc}\n"
             "Nothing was changed: an existing browser and the profile data "
@@ -277,11 +365,14 @@ def _install(replace: bool, source: str, local_zip: Path | None = None) -> Path:
 
     folder = installed_path()
     if folder is None:
+        _emit_progress("failed", error="The install did not produce a complete browser.")
         raise BrowserInstallError(
             f"The install from {source} did not produce a complete pinned browser. "
             "Nothing was changed."
         )
     _activate(folder)
+    progress = browser_progress()
+    _emit_progress("done", progress["downloaded"], progress["total"])
     return folder
 
 
