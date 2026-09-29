@@ -14,6 +14,7 @@ without touching the developer's browser cache.
 import asyncio
 import hashlib
 import json
+import posixpath
 import sys
 import zipfile
 from pathlib import Path
@@ -77,16 +78,32 @@ def no_download(monkeypatch):
     monkeypatch.setattr(browser_env, "install_from_download", refuse)
 
 
-def launch_exe(install_dir: Path, folder: Path) -> Path:
+def synthetic_browser_entry() -> str:
+    """Executable path inside a synthetic browser ZIP or install folder.
+
+    Derived from camoufox's own ``LAUNCH_FILE`` table — the same table the
+    product's ``installed_path()`` → ``launch_path()`` completeness check
+    enforces — so the fixture tracks the integrity rule instead of restating
+    it. A hardcoded ``camoufox.exe`` is correctly rejected as an incomplete
+    install on Linux/macOS, which is what broke this suite off Windows.
+    """
     from camoufox import pkgman
 
-    return folder / pkgman.LAUNCH_FILE[pkgman.OS_NAME]
+    name = pkgman.LAUNCH_FILE[pkgman.OS_NAME]
+    if pkgman.OS_NAME == "mac":
+        # launch_path() reads this relative to Camoufox.app/Contents/Resources.
+        name = posixpath.normpath(posixpath.join("Camoufox.app/Contents/Resources", name))
+    return name
+
+
+def launch_exe(install_dir: Path, folder: Path) -> Path:
+    return folder / synthetic_browser_entry()
 
 
 def fake_zip(path: Path) -> tuple[Path, str]:
     """Write a synthetic browser ZIP; return it and its real SHA256."""
     with zipfile.ZipFile(path, "w") as archive:
-        archive.writestr("camoufox.exe", b"fake browser payload")
+        archive.writestr(synthetic_browser_entry(), b"fake browser payload")
     return path, hashlib.sha256(path.read_bytes()).hexdigest()
 
 
@@ -100,7 +117,9 @@ def make_complete_install(install_dir: Path, sha256: str | None = None) -> Path:
         / f"{browser_env.PINNED_VERSION}-{browser_env.PINNED_BUILD}-{sha[:8]}"
     )
     folder.mkdir(parents=True, exist_ok=True)
-    launch_exe(install_dir, folder).write_bytes(b"fake browser payload")
+    exe = launch_exe(install_dir, folder)
+    exe.parent.mkdir(parents=True, exist_ok=True)
+    exe.write_bytes(b"fake browser payload")
     (folder / "version.json").write_text(
         json.dumps(
             {
