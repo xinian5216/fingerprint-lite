@@ -37,7 +37,7 @@ from camoufox_pm.api.models.profiles import (
     ReconcileOsRequest,
 )
 from camoufox_pm.api.models.system import ApiResponse
-from camoufox_pm.core import proxy_check
+from camoufox_pm.core import locale_map, proxy_check
 from camoufox_pm.core.database import StaleWriteError
 from camoufox_pm.core.leases import ProfileLocked
 from camoufox_pm.core.models import BrowserSettings, ProfileStatus, ProxyConfig
@@ -422,6 +422,19 @@ async def check_profile_proxy(profile_id: str):
     current = await manager.get_profile(profile_id)
     if current and current.proxy == profile.proxy:
         await manager.storage.set_proxy_check(profile_id, stored)
+        # Auto locale from the country just reported: only when the profile
+        # still has the default language settings, so a hand-set language is
+        # never overwritten, and only on a reachable check with a known
+        # country — a failed check leaves the settings exactly as they were.
+        country = result.location.country if result.location else None
+        fill = locale_map.languages_for_country(country) if result.reachable else None
+        settings = current.browser_settings
+        if fill is not None and locale_map.is_default_language(settings.languages, settings.locale):
+            languages, locale = fill
+            settings.languages = languages
+            settings.locale = locale
+            await manager.storage.set_browser_settings(profile_id, settings)
+            logger.info(f"Profile {profile_id} language set from proxy country {country}")
         return ProxyCheckResponse.from_result(result, checked_at=stored.checked_at)
 
     return ProxyCheckResponse.from_result(result)

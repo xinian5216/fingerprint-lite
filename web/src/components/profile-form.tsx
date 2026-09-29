@@ -8,6 +8,7 @@ import { useToast } from '@/components/toast'
 import {
   hasGeography,
   isStaleWrite,
+  LANGUAGES_FOR_COUNTRY,
   OS_LABELS,
   presetsAPI,
   profilesAPI,
@@ -243,6 +244,20 @@ export function ProfileForm({ open, profile, onClose, onSaved }: Props) {
       setCheckingProxy(false)
     }
   }
+
+  /** Fill the Languages field from the checked proxy's country, on request. */
+  function handleUseProxyLanguage() {
+    const country = proxyCheck?.location?.country
+    const languages = country ? LANGUAGES_FOR_COUNTRY[country] : undefined
+    if (languages) {
+      set('languages', languages)
+      toast('ok', 'Languages set from the proxy country', country ?? '')
+    }
+  }
+
+  const proxyLanguageAvailable =
+    !!proxyCheck?.location?.country &&
+    proxyCheck.location.country in LANGUAGES_FOR_COUNTRY
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -605,6 +620,11 @@ export function ProfileForm({ open, profile, onClose, onSaved }: Props) {
               )}
               {checkingProxy ? 'Checking…' : 'Check proxy'}
             </button>
+            {proxyLanguageAvailable && (
+              <button type="button" className="btn" onClick={handleUseProxyLanguage}>
+                Use proxy language
+              </button>
+            )}
             <ProxyCheckResult result={proxyCheck} />
           </div>
         </Section>

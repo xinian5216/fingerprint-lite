@@ -563,3 +563,52 @@ export const OS_LABELS: Record<string, string> = {
   macos: 'macOS',
   linux: 'Linux',
 }
+
+/**
+ * Prefill for the Languages field from a proxy's exit country. Mirrors the
+ * backend locale table; used only when the user explicitly asks (the "Use
+ * proxy language" button), never applied silently.
+ */
+export const LANGUAGES_FOR_COUNTRY: Record<string, string> = {
+  US: 'en-US, en',
+  GB: 'en-GB, en',
+  CA: 'en-CA, en, fr-CA, fr',
+  AU: 'en-AU, en',
+  DE: 'de-DE, de, en',
+  AT: 'de-AT, de, en',
+  CH: 'de-CH, fr-CH, it-CH, de, fr, it, en',
+  FR: 'fr-FR, fr, en',
+  BE: 'fr-BE, nl-BE, de-BE, fr, nl, en',
+  ES: 'es-ES, es, en',
+  MX: 'es-MX, es, en',
+  AR: 'es-AR, es, en',
+  IT: 'it-IT, it, en',
+  PT: 'pt-PT, pt, en',
+  BR: 'pt-BR, pt, en',
+  NL: 'nl-NL, nl, en',
+  SE: 'sv-SE, sv, en',
+  NO: 'nb-NO, nb, no, en',
+  DK: 'da-DK, da, en',
+  FI: 'fi-FI, fi, sv, en',
+  PL: 'pl-PL, pl, en',
+  CZ: 'cs-CZ, cs, en',
+  GR: 'el-GR, el, en',
+  RU: 'ru-RU, ru, en-US',
+  UA: 'uk-UA, uk, ru, en',
+  TR: 'tr-TR, tr, en',
+  IL: 'he-IL, he, en',
+  AE: 'ar-AE, ar, en',
+  CN: 'zh-CN, zh, en',
+  TW: 'zh-TW, zh, en',
+  HK: 'zh-HK, zh, en, zh-CN',
+  SG: 'en-SG, zh-SG, ms-SG, ta-SG, en',
+  JP: 'ja-JP, ja, en',
+  KR: 'ko-KR, ko, en',
+  IN: 'en-IN, hi-IN, hi, en',
+  TH: 'th-TH, th, en',
+  VN: 'vi-VN, vi, en',
+  ID: 'id-ID, id, en',
+  MY: 'ms-MY, ms, en',
+  PH: 'en-PH, fil-PH, fil, en',
+  ZA: 'en-ZA, en, af',
+}

@@ -377,3 +377,76 @@ async def test_an_unreadable_stored_check_costs_a_dot_not_the_list(client, exit_
     assert listed.status_code == 200
     assert any(row["id"] == profile_id for row in listed.json()["profiles"])
     assert (await client.get(f"/api/profiles/{profile_id}")).json()["proxy_check"] is None
+
+
+@pytest.fixture
+def exit_in_nowhere(monkeypatch):
+    """A reachable proxy in a country the map does not know, offline."""
+    unknown = proxy_check.ProxyLocation(
+        ip="203.0.113.9",
+        country="XX",
+        timezone="Etc/UTC",
+        latitude=0.0,
+        longitude=0.0,
+    )
+
+    async def resolve(proxy, timeout=proxy_check.DEFAULT_TIMEOUT):
+        return unknown.ip, 7
+
+    monkeypatch.setattr(proxy_check, "resolve_exit_ip", resolve)
+    monkeypatch.setattr(proxy_check, "locate", lambda ip: unknown)
+
+
+@pytest.mark.asyncio
+async def test_a_check_fills_the_default_language_from_the_proxy_country(client, exit_in_tokyo):
+    """The language follows an explicit check; the user can still change it after."""
+    created = await client.post("/api/profiles", json={"name": "fresh-lang"})
+    profile_id = created.json()["id"]
+    assert created.json()["browser_settings"]["languages"] == ["en-US", "en"]
+
+    checked = await client.post(f"/api/profiles/{profile_id}/check-proxy")
+    assert checked.status_code == 200
+
+    settings = (await client.get(f"/api/profiles/{profile_id}")).json()["browser_settings"]
+    assert settings["languages"] == ["ja-JP", "ja", "en"]
+    assert settings["locale"] == "ja_JP"
+
+
+@pytest.mark.asyncio
+async def test_a_check_never_overwrites_a_hand_set_language(client, exit_in_tokyo):
+    created = await client.post(
+        "/api/profiles",
+        json={"name": "my-lang", "browser_settings": {"languages": ["de-DE", "de"]}},
+    )
+    profile_id = created.json()["id"]
+
+    await client.post(f"/api/profiles/{profile_id}/check-proxy")
+
+    settings = (await client.get(f"/api/profiles/{profile_id}")).json()["browser_settings"]
+    assert settings["languages"] == ["de-DE", "de"]
+    assert settings["locale"] is None
+
+
+@pytest.mark.asyncio
+async def test_a_dead_proxy_leaves_the_language_alone(client, dead_proxy):
+    created = await client.post("/api/profiles", json={"name": "dead-lang"})
+    profile_id = created.json()["id"]
+
+    await client.post(f"/api/profiles/{profile_id}/check-proxy")
+
+    settings = (await client.get(f"/api/profiles/{profile_id}")).json()["browser_settings"]
+    assert settings["languages"] == ["en-US", "en"]
+    assert settings["locale"] is None
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_country_leaves_the_language_alone(client, exit_in_nowhere):
+    created = await client.post("/api/profiles", json={"name": "nowhere-lang"})
+    profile_id = created.json()["id"]
+
+    checked = await client.post(f"/api/profiles/{profile_id}/check-proxy")
+    assert checked.status_code == 200
+
+    settings = (await client.get(f"/api/profiles/{profile_id}")).json()["browser_settings"]
+    assert settings["languages"] == ["en-US", "en"]
+    assert settings["locale"] is None
