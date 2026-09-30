@@ -52,6 +52,8 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Parse Windows acceptance recorder
         run: '[void][scriptblock]::Create((Get-Content scripts/record_first_run.ps1 -Raw))'
+      - name: Real GeoIP Unicode path regression (offline)
+        run: uv run --locked pytest tests/unit/test_geoip_compat.py -q -s
       - name: Build Windows portable ZIP
         run: uv run --locked python scripts/build_portable.py
       - name: Packaged console smoke and artifact identity

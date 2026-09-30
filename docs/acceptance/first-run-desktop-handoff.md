@@ -81,7 +81,7 @@ contaminate the fresh-install ZIP. Build success is not GUI acceptance.
 From a clean PowerShell session, run the recorder from the downloaded artifact:
 
 ```powershell
-powershell -File .\record_first_run.ps1 -PortableZip .\FingerprintLite-0.1.0a1-windows-x64.zip
+powershell -ExecutionPolicy Bypass -File .\record_first_run.ps1 -PortableZip .\FingerprintLite-0.1.0-alpha.1-windows-x64.zip
 ```
 
 Use the actual ZIP filename in the artifact. The recorder creates a unique
@@ -122,3 +122,38 @@ To roll back the program, retain the existing Data/Browser directories and
 replace only the program files with the previous build; never delete
 `config.env` or its encryption key. Source rollback is a normal revert of the
 follow-up commit, not a force-push or a reset of shared history.
+
+
+## Follow-up: real-machine report and Unicode GeoIP launch failure
+
+The user tested the `f4edae8` Windows artifact and reported that the management
+interface now opens normally. This is **USER-OBSERVED HANDOFF PASS** for that
+run, not an independently controlled test or repeated stability/clean-shutdown
+record. Keep the original bug's final status pending the remaining acceptance
+criteria; do not discard this positive evidence.
+
+Launching a browser then failed with `FileNotFoundError` for the GeoIP IPv4
+MMDB under a Chinese parent directory. The error displayed the filename as
+UTF-8 bytes. The locked `maxminddb 3.1.1` C extension converts Python paths to
+filesystem bytes and checks readability through a narrow filename API before
+opening the database. This can make an existing Unicode Windows path look
+missing. This is a separate browser-launch failure from the wizard handoff.
+
+`geoip_compat.install_windows_geoip_reader()` now installs an idempotent,
+process-local adapter before GeoIP reads: only automatic reads of Unicode
+Windows path strings/PathLike values select MaxMind's supported pure Python
+`MODE_MMAP` reader. ASCII paths, other platforms, file descriptors and explicit
+reader modes retain their behavior. Missing or corrupt databases still raise;
+GeoIP, language, location, timezone and proxy logic are not disabled. No
+upstream files, dependencies, browser pins, profile data or paths are changed.
+
+Regression uses an unmodified, licensed MaxMind synthetic City test fixture
+and Camoufox's actual `get_geolocation` from a Chinese directory, with network
+downloads forbidden. The Windows workflow prints both the unadapted AUTO
+reader outcome and the adapted lookup result, then rebuilds the portable ZIP.
+
+Local follow-up validation: Ruff/format/mypy PASS; **536 passed, 2 skipped,
+25 deselected**. Windows reproduction/build and user browser-launch validation
+are pending at commit time. Even a passing lookup test does not prove a full
+headed browser launch on the user's machine. Continue on this same branch and
+Draft PR; no split PR, merge, tag or Release.

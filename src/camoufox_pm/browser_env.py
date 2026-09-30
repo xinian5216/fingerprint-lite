@@ -79,6 +79,10 @@ def use_browser_root(browser_dir: Path) -> None:
     global _BROWSER_DIR
     from camoufox import geolocation, multiversion, pkgman
 
+    from camoufox_pm.geoip_compat import install_windows_geoip_reader
+
+    install_windows_geoip_reader()
+
     _BROWSER_DIR = Path(browser_dir)
     cache = _BROWSER_DIR / "cache"
     pkgman.INSTALL_DIR = cache
@@ -611,6 +615,10 @@ def ensure_geoip() -> None:
     """
     try:
         from camoufox import geolocation
+
+        from camoufox_pm.geoip_compat import install_windows_geoip_reader
+
+        install_windows_geoip_reader()
 
         v4 = geolocation.get_mmdb_path("ipv4")
         v6 = geolocation.get_mmdb_path("ipv6")
