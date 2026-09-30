@@ -77,10 +77,34 @@ delete or reset an existing browser profile to repair its UI.
   real search-service engine names/submission URLs, initial defaults, a user's
   Startpage choice after restart, a second profile's privacy default, absence of
   the highlighter, native Windows caption style bits, and unchanged saved pin.
-- Windows execution and portable ZIP: **PENDING** until the workflow passes.
+- Windows real-browser check: **PASS** on application commit
+  `9de3682fe1da6dc362f5e0dc6d2889344daca175`,
+  [run 36742758250](https://github.com/xinian5216/fingerprint-lite/actions/runs/36742758250).
+  It recorded exactly five visible engines and correctly encoded Unicode/query
+  punctuation in HTTPS submission URLs. Fresh and second profiles defaulted to
+  DuckDuckGo (Privacy); the first profile reopened with Startpage. All three
+  windows reported no highlighter, native titlebar enabled, suggestions disabled,
+  and real Windows caption/system-menu/minimise/maximise style bits present.
+  Backend on Windows: 548 passed, 2 skipped; standard CI Python 3.10–3.13 and
+  frontend also passed. This uses the real browser, not a mocked search service.
+- [Portable test artifact](https://github.com/xinian5216/fingerprint-lite/actions/runs/36742758250/artifacts/11111157316):
+  build and packaged console smoke **PASS**. The ZIP was downloaded and its hash,
+  source commit, archive CRCs, fresh data boundary and embedded browser_ui,
+  search_compat and geoip_compat modules were verified. ZIP SHA256:
+  `145E9C17FE1852A71BBE17CDB1A1072256A6122F4028D288E6DA54C701E72067`.
+  `browser-ui-check.json` in the artifact contains the actual engine/window
+  evidence. The tested source omni.ja digest was
+  `bc56050665ec1815c2af31d931a7d633c74805c97a4af9b4469c2554c1d1038b`;
+  its selector module digest was
+  `ca843d9379f8cf4b5ed04e3da35fa7ace2cbbe6f2ec5a652afea09f8642ffff3`.
 - True user-desktop visual appearance, search-switcher selection, submitted
   query navigation and minimise/maximise/restore/close clicks: **PENDING**.
   CI state checks do not constitute that visual acceptance.
+  Close all managed browsers and the manager before replacing program files.
+  Then reopen an existing test profile, verify all five options in the search
+  switcher, submit a harmless query, switch default in Settings → Search, restart,
+  and verify the choice persists. Check the ordinary mouse and caption controls,
+  including minimise, maximise/restore and normal close. Do not reset the profile.
 - First-run handoff retains its existing OPEN stability gate; the user's single
   observed manager-open pass remains recorded in first-run-desktop-handoff.md.
 

@@ -97,3 +97,21 @@ the paused per-profile extension route.
   `version.json` present). The 47-test guard commit stands validated.
 - Suggested next: Phase 5A real-usage regression first; then decide about
   alpha.2. Do not rush either.
+
+## Follow-up 2026-09-30 — resumed by the user's browser UI repair request
+
+The earlier uninstall-policy signal was incomplete diagnosis. A real headed
+Windows run of the pinned beta.30 build now captured a deterministic search
+initialisation error: the hardcoded v1 selector stub lacks `recordType` for the
+Firefox 152 Rust parser. Policies cannot register engines until this is fixed.
+
+Application commit `9de3682` backports only the upstream v2 inert stub into an
+isolated, versioned runtime copy and configures five HTTPS policy engines there.
+The original verified beta.30 install is retained unchanged; no executable/DLL,
+browser major version, saved fingerprint or profile-internal file is modified.
+Windows chrome inspection proved five engines, a DuckDuckGo initial default,
+persisted Startpage user choice on reopen and a second profile's privacy default.
+Native titlebar and no cursor-highlighter checks passed in the same real launches.
+See [browser UI recovery and rollback](acceptance/browser-ui-recovery.md) for
+the test artifact, scope, source/resource digests and remaining visual acceptance.
+This is still the original recovery branch/Draft PR #8, not a new feature PR.
