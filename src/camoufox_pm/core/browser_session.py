@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 import psutil
 from loguru import logger
 
-from .. import browser_env, browser_ui, portable
+from .. import browser_env, browser_ui, portable, search_compat
 from ..config import get_settings
 
 if TYPE_CHECKING:
@@ -240,7 +240,11 @@ class BrowserSessionManager:
             # that build and stops camoufox's own "download the current one"
             # fallback from ever swapping the engine behind the user's back.
             install = browser_env.ensure_ready()
+            install = search_compat.prepare_runtime(install)
             browser_ui.prepare_search_policy(install)
+            from camoufox.pkgman import launch_path
+
+            launch_options = {**launch_options, "executable_path": launch_path(install)}
         if profile_id in self.active_sessions:
             return self.active_sessions[profile_id]
 

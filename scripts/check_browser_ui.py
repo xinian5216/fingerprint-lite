@@ -21,7 +21,7 @@ import psutil
 from camoufox.addons import DefaultAddons
 from camoufox.sync_api import Camoufox
 
-from camoufox_pm import browser_env, browser_ui
+from camoufox_pm import browser_env, browser_ui, search_compat
 from camoufox_pm.core import fingerprint_store
 from camoufox_pm.core.models import Profile
 
@@ -129,7 +129,9 @@ def native_caption_styles(pid: int) -> list[int]:
     return styles
 
 
-def inspect(profile: Path, pin: dict[str, Any] | None = None, choose_startpage: bool = False):
+def inspect(
+    install: Path, profile: Path, pin: dict[str, Any] | None = None, choose_startpage: bool = False
+):
     # Playwright 1.60 sends userPrefs via Browser.enable *after* browser startup,
     # too late to change Marionette's startup port. Use its default port and
     # refuse an occupied one; only this disposable acceptance runner enables it.
@@ -138,6 +140,9 @@ def inspect(profile: Path, pin: dict[str, Any] | None = None, choose_startpage: 
         sock.bind(("127.0.0.1", port))
     options = Profile(name="UI regression", storage_path=str(profile)).to_camoufox_launch_options()
     options.update(headless=False, geoip=False, exclude_addons=[DefaultAddons.UBO])
+    from camoufox.pkgman import launch_path
+
+    options["executable_path"] = launch_path(install)
     if pin is None:
         pin = fingerprint_store.resolve(options)
         assert pin, "Fingerprint must be resolved for the real browser test"
@@ -197,17 +202,25 @@ def main() -> None:
     root = Path(__file__).resolve().parents[1]
     browser_env.use_browser_root(root / ".work" / "browser-ui-browser")
     install = browser_env.ensure_browser()
+    install = search_compat.prepare_runtime(install)
+    compatibility = json.loads(
+        (install / "fingerprint-lite-search-compat.json").read_text(encoding="utf-8")
+    )
+    cache_count = len(compatibility.pop("removed_bytecode_caches"))
+    print(
+        "Compatibility runtime:", {**compatibility, "removed_cache_count": cache_count}, flush=True
+    )
     browser_ui.prepare_search_policy(install)
     with tempfile.TemporaryDirectory(prefix="浏览器界面-") as temporary:
         base = Path(temporary)
-        first, pin = inspect(base / "profile-one", choose_startpage=True)
+        first, pin = inspect(install, base / "profile-one", choose_startpage=True)
         assert first["default"] == first["privateDefault"] == browser_ui.DEFAULT_SEARCH_ENGINE, (
             first
         )
         browser_ui.prepare_search_policy(install)
-        reopened, _ = inspect(base / "profile-one", pin=pin)
+        reopened, _ = inspect(install, base / "profile-one", pin=pin)
         assert reopened["default"] == "Startpage", reopened
-        second, _ = inspect(base / "profile-two")
+        second, _ = inspect(install, base / "profile-two")
         assert second["default"] == browser_ui.DEFAULT_SEARCH_ENGINE, second
     report = {"fresh": first, "reopened": reopened, "secondProfile": second}
     destination = root / ".work" / "browser-ui-check.json"

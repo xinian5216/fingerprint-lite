@@ -1,7 +1,7 @@
 # Browser UI recovery (2026-09-30)
 
 Continues `test/phase5a-acceptance` and Draft PR #8. No new PR, merge, tag,
-release, browser-version change or profile migration.
+release, browser-major-version change or profile migration.
 
 The user can now open the manager and launch a browser, but reports an empty
 search-engine switcher, a red mouse overlay, and missing-glyph caption buttons.
@@ -11,8 +11,17 @@ The screenshots were inspected directly. The fixed browser remains Camoufox
 ## Causes and changes
 
 - The pinned archive's `distribution/policies.json` removes common engines and
-  defines `None` at `http://127.0.0.1`. Before a portable browser launch, replace
-  only its SearchEngines section with five HTTPS policy engines: DuckDuckGo
+  defines `None` at `http://127.0.0.1`. More fundamentally, the selector returns
+  a v1 stub that Firefox 152's Rust search parser rejects: the actual Windows
+  run reproduced `missing field recordType`, so policies alone cannot work.
+  Backport the upstream v2 inert stub from `v152.0.4-beta.31` into a separate
+  versioned runtime copy. No downloadable release exists for beta.31; the
+  available new binaries also upgrade Firefox to 156 and change more identity
+  behavior. Keep the verified beta.30 install intact and keep its executable,
+  DLLs, fonts and fingerprint implementation bytes. Change only the selector
+  module's known stub, remove bundled bytecode caches that could retain old JS,
+  and verify every other archive resource before atomic directory promotion.
+  Configure the copy's SearchEngines section with five HTTPS policy engines: DuckDuckGo
   (initial normal/private default), Startpage, Brave Search, Google and Bing.
   Display names are `DuckDuckGo (Privacy)`, `Startpage`, `Brave Search`,
   `Google Search` and `Bing Search`. Names must differ from the built-in engines:
@@ -36,10 +45,17 @@ available through the browser's search UI/settings and @ddg/@sp/@brave/@google/@
 
 ## Protection and rollback
 
-The product now intentionally configures the pinned install's distribution
-policy; its executable, packaged omni.ja, prefs/config files and archive pin are
-unchanged. No direct writes to `search.json.mozlz4` or `extensions.json`.
-An OS file lock serializes changes, a byte-for-byte original policy is saved as
+The product intentionally creates a beta.30 compatibility runtime next to the
+verified original, named `*-fingerprint-lite-search-v2-1`. Its manifest records
+source archive pin, original/patched omni.ja digests, original/patched module
+digests and removed bytecode entries. A lock serializes creation, unrecognised
+source is refused, staged directories are removed on failure, and a damaged
+existing copy is refused rather than silently trusted or overwritten. Unchanged
+files are hardlinked where possible; modified resources are replaced atomically
+in the copy, leaving their original file inode untouched. Browser launch names
+the copy's executable explicitly; global active-browser resolution stays pinned.
+No direct writes to `search.json.mozlz4` or `extensions.json`.
+Within the copy, a byte-for-byte original policy is saved as
 `distribution/policies.fingerprint-lite-original.json`, and policy replacement
 is atomic. An unchanged policy is not rewritten on later launches. A missing,
 invalid or unwritable policy fails the launch without launching a partially
@@ -47,13 +63,13 @@ configured browser or replacing a malformed original.
 
 Close browsers normally before updating program files. Retain `Data`, `Browser`,
 `Temp`, `paths.env` and the `config.env` encryption key. Rollback: close browsers
-and manager, restore the previous program build, then copy the policy backup to
-`policies.json` in the same installed browser's distribution directory. Never
+and manager, restore the previous program build. It selects the retained official
+install; the compatibility copy can stay on disk for diagnosis. Never
 delete or reset an existing browser profile to repair its UI.
 
 ## Evidence / outstanding acceptance
 
-- Local non-browser suite: 543 passed, 2 skipped, 25 deselected. Backend lint,
+- Local non-browser suite: 548 passed, 2 skipped, 25 deselected. Backend lint,
   formatting and mypy passed.
 - Added real Windows check `scripts/check_browser_ui.py`: official verified
   pinned download, disposable profiles (including Unicode paths), real headed
@@ -71,4 +87,6 @@ delete or reset an existing browser profile to repair its UI.
 Earlier search investigation was paused after an unsuccessful policy PoC. This
 user request explicitly resumes the search feature. The supported distribution
 policy is now tested against the actual pinned build before claiming it works;
-profile-internal injection and browser binary changes remain outside this fix.
+profile-internal injection and browser executable/DLL/major-version changes
+remain outside this fix. The resource backport is an explicit scoped change,
+not a claim that the original upstream resource archive works unchanged.
