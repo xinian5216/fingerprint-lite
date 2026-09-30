@@ -55,12 +55,13 @@ def test_webrtc_mode_replace_does_not_block():
 def test_stable_canvas_sets_the_pref_and_is_off_by_default():
     """Off by default: the default keeps cross-site unlinkability."""
     default = Profile(name="d").to_camoufox_launch_options()
-    assert "firefox_user_prefs" not in default
+    assert "privacy.baselineFingerprintingProtection" not in default["firefox_user_prefs"]
 
     stable = Profile(
         name="s", browser_settings=BrowserSettings(stable_canvas=True)
     ).to_camoufox_launch_options()
-    assert stable["firefox_user_prefs"] == {"privacy.baselineFingerprintingProtection": False}
+    assert stable["firefox_user_prefs"]["privacy.baselineFingerprintingProtection"] is False
+    assert stable["firefox_user_prefs"]["browser.search.suggest.enabled"] is False
 
 
 def test_window_tuple_from_width_height():

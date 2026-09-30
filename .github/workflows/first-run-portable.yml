@@ -54,6 +54,8 @@ jobs:
         run: '[void][scriptblock]::Create((Get-Content scripts/record_first_run.ps1 -Raw))'
       - name: Real GeoIP Unicode path regression (offline)
         run: uv run --locked pytest tests/unit/test_geoip_compat.py -q -s
+      - name: Real pinned Windows browser UI regression
+        run: uv run --locked python scripts/check_browser_ui.py
       - name: Build Windows portable ZIP
         run: uv run --locked python scripts/build_portable.py
       - name: Packaged console smoke and artifact identity
@@ -76,5 +78,6 @@ jobs:
             dist/FingerprintLite-*-windows-x64.zip
             dist/build-info.json
             dist/record_first_run.ps1
+            .work/browser-ui-check.json
           if-no-files-found: error
           retention-days: 7

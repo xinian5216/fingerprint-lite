@@ -9,6 +9,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from camoufox_pm import browser_ui
+
 # Characters used for short IDs, excluding visually confusing ones (0, o, 1, l, i).
 _ID_ALPHABET = "".join(c for c in (string.ascii_lowercase + string.digits) if c not in "0o1li")
 
@@ -268,10 +270,11 @@ class Profile(BaseModel):
         options: dict[str, Any] = {
             "os": bs.os,
             "locale": ",".join(bs.languages) if bs.languages else "en-US",
-            "config": bs.to_camoufox_config(),
+            "config": {**bs.to_camoufox_config(), "showcursor": False},
             "user_data_dir": self.get_storage_path(),
             "persistent_context": True,
             "humanize": True,
+            "firefox_user_prefs": browser_ui.firefox_prefs(),
             "i_know_what_im_doing": True,
             # Let Camoufox derive geo/timezone from the proxy IP unless we set coordinates.
             "geoip": not bool(bs.geolocation),
@@ -290,9 +293,7 @@ class Profile(BaseModel):
             # The cost is deliberate: the canvas is then identical across sites,
             # exactly as real hardware behaves, so it can be correlated between
             # them. That is why this is per profile and off by default.
-            options["firefox_user_prefs"] = {
-                "privacy.baselineFingerprintingProtection": False,
-            }
+            options["firefox_user_prefs"]["privacy.baselineFingerprintingProtection"] = False
         if bs.window_width and bs.window_height:
             options["window"] = (bs.window_width, bs.window_height)
         if bs.fonts:

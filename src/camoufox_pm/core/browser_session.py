@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 import psutil
 from loguru import logger
 
-from .. import browser_env, portable
+from .. import browser_env, browser_ui, portable
 from ..config import get_settings
 
 if TYPE_CHECKING:
@@ -239,7 +239,8 @@ class BrowserSessionManager:
             # Portable mode runs one pinned browser build. This both guarantees
             # that build and stops camoufox's own "download the current one"
             # fallback from ever swapping the engine behind the user's back.
-            browser_env.ensure_ready()
+            install = browser_env.ensure_ready()
+            browser_ui.prepare_search_policy(install)
         if profile_id in self.active_sessions:
             return self.active_sessions[profile_id]
 
