@@ -37,15 +37,16 @@ def test_policy_replaces_none_preserves_other_policies_and_exact_backup(install)
         "webcompat@mozilla.org",
     ]
     search = policies["SearchEngines"]
-    assert search["Default"] == search["DefaultPrivate"] == "DuckDuckGo"
-    assert search["Remove"] == ["None"]
+    assert search["Default"] == search["DefaultPrivate"] == "DuckDuckGo (Privacy)"
+    assert {e["Name"] for e in search["Add"]}.isdisjoint(search["Remove"])
+    assert {"None", "Google", "DuckDuckGo", "Bing"} <= set(search["Remove"])
     assert search["PreventInstalls"] is False
     assert {engine["Name"] for engine in search["Add"]} == {
-        "DuckDuckGo",
+        "DuckDuckGo (Privacy)",
         "Startpage",
         "Brave Search",
-        "Google",
-        "Bing",
+        "Google Search",
+        "Bing Search",
     }
     assert all(engine["URLTemplate"].startswith("https://") for engine in search["Add"])
     assert path.with_name("policies.fingerprint-lite-original.json").read_bytes() == original

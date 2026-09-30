@@ -11,13 +11,13 @@ from typing import Any
 
 from loguru import logger
 
-DEFAULT_SEARCH_ENGINE = "DuckDuckGo"
+DEFAULT_SEARCH_ENGINE = "DuckDuckGo (Privacy)"
 SEARCH_ENGINES = (
-    ("DuckDuckGo", "https://duckduckgo.com/?q={searchTerms}", "@ddg"),
+    ("DuckDuckGo (Privacy)", "https://duckduckgo.com/?q={searchTerms}", "@ddg"),
     ("Startpage", "https://www.startpage.com/sp/search?query={searchTerms}", "@sp"),
     ("Brave Search", "https://search.brave.com/search?q={searchTerms}", "@brave"),
-    ("Google", "https://www.google.com/search?q={searchTerms}", "@google"),
-    ("Bing", "https://www.bing.com/search?q={searchTerms}", "@bing"),
+    ("Google Search", "https://www.google.com/search?q={searchTerms}", "@google"),
+    ("Bing Search", "https://www.bing.com/search?q={searchTerms}", "@bing"),
 )
 
 
@@ -58,7 +58,19 @@ def prepare_search_policy(install: Path) -> None:
             raise ValueError("Browser policies must contain a policies object")
         search = {
             "PreventInstalls": False,
-            "Remove": ["None"],
+            # Policy engines cannot replace app-provided engines even when the
+            # old policy hid them. Distinct names avoid those collisions; hide
+            # the built-ins so existing profiles also get the same five choices.
+            "Remove": [
+                "None",
+                "Google",
+                "DuckDuckGo",
+                "Bing",
+                "Amazon.com",
+                "eBay",
+                "Twitter",
+                "Wikipedia (en)",
+            ],
             "Default": DEFAULT_SEARCH_ENGINE,
             "DefaultPrivate": DEFAULT_SEARCH_ENGINE,
             "Add": [

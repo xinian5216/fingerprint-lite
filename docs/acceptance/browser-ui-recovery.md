@@ -14,7 +14,10 @@ The screenshots were inspected directly. The fixed browser remains Camoufox
   defines `None` at `http://127.0.0.1`. Before a portable browser launch, replace
   only its SearchEngines section with five HTTPS policy engines: DuckDuckGo
   (initial normal/private default), Startpage, Brave Search, Google and Bing.
-  Retain every other upstream policy, including update/telemetry restrictions.
+  Display names are `DuckDuckGo (Privacy)`, `Startpage`, `Brave Search`,
+  `Google Search` and `Bing Search`. Names must differ from the built-in engines:
+  Firefox cannot replace an app-provided engine through policy, even when hidden.
+  Hide the old built-ins and None, retaining all non-search upstream policies.
   Default changes are applied by Firefox on policy modification; subsequent
   per-profile default choices must survive restart. Search suggestions stay off
   to avoid sending partially typed searches to a provider.

@@ -18,7 +18,6 @@ from pathlib import Path
 from typing import Any
 
 import psutil
-
 from camoufox.addons import DefaultAddons
 from camoufox.sync_api import Camoufox
 
@@ -83,13 +82,15 @@ class ChromeInspector:
 SEARCH_STATE = """
 const done = arguments[arguments.length - 1];
 (async () => {
-  await Services.search.init();
-  const engines = await Services.search.getVisibleEngines();
+  const {SearchService: search} = ChromeUtils.importESModule(
+    "moz-src:///toolkit/components/search/SearchService.sys.mjs");
+  await search.init();
+  const engines = await search.getVisibleEngines();
   const win = Services.wm.getMostRecentWindow("navigator:browser");
   done({
     engines: engines.map(e => ({name: e.name, url: e.getSubmission("privacy test 中文 &+/").uri.spec})),
-    default: (await Services.search.getDefault()).name,
-    privateDefault: (await Services.search.getDefaultPrivate()).name,
+    default: (await search.getDefault()).name,
+    privateDefault: (await search.getDefaultPrivate()).name,
     highlighter: !!win.document.getElementById("cursor-highlighter"),
     nativeTitlebar: !Services.appinfo.drawInTitlebar,
     pid: Services.appinfo.processID,
@@ -176,8 +177,9 @@ def inspect(profile: Path, pin: dict[str, Any] | None = None, choose_startpage: 
                 changed = inspector.script(
                     """
                 const done = arguments[arguments.length - 1];
-                Services.search.setDefault(Services.search.getEngineByName("Startpage"),
-                  "user")
+                const {SearchService: search} = ChromeUtils.importESModule(
+                  "moz-src:///toolkit/components/search/SearchService.sys.mjs");
+                search.setDefault(search.getEngineByName("Startpage"), search.CHANGE_REASON.USER)
                   .then(() => done(true), error => done({error: String(error)}));
                 """,
                     asynchronous=True,
@@ -199,12 +201,14 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="浏览器界面-") as temporary:
         base = Path(temporary)
         first, pin = inspect(base / "profile-one", choose_startpage=True)
-        assert first["default"] == first["privateDefault"] == "DuckDuckGo", first
+        assert first["default"] == first["privateDefault"] == browser_ui.DEFAULT_SEARCH_ENGINE, (
+            first
+        )
         browser_ui.prepare_search_policy(install)
         reopened, _ = inspect(base / "profile-one", pin=pin)
         assert reopened["default"] == "Startpage", reopened
         second, _ = inspect(base / "profile-two")
-        assert second["default"] == "DuckDuckGo", second
+        assert second["default"] == browser_ui.DEFAULT_SEARCH_ENGINE, second
     report = {"fresh": first, "reopened": reopened, "secondProfile": second}
     destination = root / ".work" / "browser-ui-check.json"
     destination.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
