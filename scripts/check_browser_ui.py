@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import ctypes
 import json
+import os
 import socket
 import sys
 import tempfile
 import time
 from pathlib import Path
 from typing import Any
+
+import psutil
 
 from camoufox.addons import DefaultAddons
 from camoufox.sync_api import Camoufox
@@ -109,6 +112,9 @@ def native_caption_styles(pid: int) -> list[int]:
     user32.GetWindowLongW.restype = ctypes.c_long
     styles: list[int] = []
     callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    user32.IsWindowVisible.argtypes = [wintypes.HWND]
+    user32.EnumWindows.argtypes = [callback_type, wintypes.LPARAM]
 
     @callback_type
     def visit(hwnd: int, _param: int) -> bool:
@@ -123,9 +129,12 @@ def native_caption_styles(pid: int) -> list[int]:
 
 
 def inspect(profile: Path, pin: dict[str, Any] | None = None, choose_startpage: bool = False):
+    # Playwright 1.60 sends userPrefs via Browser.enable *after* browser startup,
+    # too late to change Marionette's startup port. Use its default port and
+    # refuse an occupied one; only this disposable acceptance runner enables it.
+    port = 2828
     with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        port = sock.getsockname()[1]
+        sock.bind(("127.0.0.1", port))
     options = Profile(name="UI regression", storage_path=str(profile)).to_camoufox_launch_options()
     options.update(headless=False, geoip=False, exclude_addons=[DefaultAddons.UBO])
     if pin is None:
@@ -134,9 +143,18 @@ def inspect(profile: Path, pin: dict[str, Any] | None = None, choose_startpage: 
     before = json.dumps(pin, sort_keys=True)
     options["config"] = {**pin, **options["config"]}
     options["args"] = ["--marionette", "--remote-allow-system-access"]
-    options["firefox_user_prefs"]["marionette.port"] = port
+    options["env"] = {**os.environ, "MOZ_MARIONETTE": "1"}
     with Camoufox(**options) as context:
         context.pages[0].mouse.move(300, 200)
+        print(
+            "Browser processes:",
+            [
+                {"pid": p.pid, "name": p.name()}
+                for p in psutil.Process().children(recursive=True)
+                if "camoufox" in p.name().lower()
+            ],
+            flush=True,
+        )
         inspector = ChromeInspector(port)
         try:
             state = inspector.script(SEARCH_STATE, asynchronous=True)
@@ -155,15 +173,16 @@ def inspect(profile: Path, pin: dict[str, Any] | None = None, choose_startpage: 
                 e["url"].startswith("https://") for e in state["engines"] if e["name"] in expected
             )
             if choose_startpage:
-                inspector.script(
+                changed = inspector.script(
                     """
                 const done = arguments[arguments.length - 1];
                 Services.search.setDefault(Services.search.getEngineByName("Startpage"),
-                  Ci.nsISearchService.CHANGE_REASON_USER)
+                  "user")
                   .then(() => done(true), error => done({error: String(error)}));
                 """,
                     asynchronous=True,
                 )
+                assert changed is True, changed
         finally:
             inspector.connection.close()
     assert json.dumps(pin, sort_keys=True) == before, "UI defaults changed a pinned fingerprint"
