@@ -1,0 +1,78 @@
+name: WIP Windows first-run package
+
+# One Windows build for the existing recovery PR; no tag or Release is created.
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'packaging/**'
+      - '.github/workflows/first-run-portable.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: first-run-package-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  portable:
+    if: github.event_name == 'workflow_dispatch' || (github.head_ref == 'test/phase5a-acceptance' && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Install locked build and test dependencies
+        run: uv sync --locked --extra dev --extra build --python 3.12
+      - name: Validate backend
+        run: |
+          uv run --locked ruff check src tests
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          uv run --locked ruff format --check src tests
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          uv run --locked mypy src/camoufox_pm
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          uv run --locked pytest -m "not browser" -q
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Parse Windows acceptance recorder
+        run: '[void][scriptblock]::Create((Get-Content scripts/record_first_run.ps1 -Raw))'
+      - name: Build Windows portable ZIP
+        run: uv run --locked python scripts/build_portable.py
+      - name: Packaged console smoke and artifact identity
+        run: |
+          $folder = Get-ChildItem dist -Directory -Filter 'FingerprintLite-*-windows-x64' | Select-Object -First 1
+          & "$($folder.FullName)/camoufox-pm.exe" browser status
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $zip = Get-ChildItem dist -File -Filter 'FingerprintLite-*-windows-x64.zip' | Select-Object -First 1
+          @{
+            commit = (git rev-parse HEAD)
+            zip = $zip.Name
+            sha256 = (Get-FileHash $zip.FullName -Algorithm SHA256).Hash
+            first_run_gui = 'NOT TESTED - manual Windows desktop acceptance required'
+          } | ConvertTo-Json | Set-Content dist/build-info.json -Encoding utf8
+          Copy-Item scripts/record_first_run.ps1 dist/record_first_run.ps1
+      - uses: actions/upload-artifact@v7
+        with:
+          name: first-run-windows-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            dist/FingerprintLite-*-windows-x64.zip
+            dist/build-info.json
+            dist/record_first_run.ps1
+          if-no-files-found: error
+          retention-days: 7

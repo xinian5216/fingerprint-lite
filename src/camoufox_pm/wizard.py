@@ -64,8 +64,8 @@ class WizardResult:
     temp_dir: Path
     migrated_from: Path | None = None
     browser_path: Path | None = None
-    # True when this run is the one that created paths.env — the signal the
-    # packaged first-start uses to relaunch into the manager.
+    # Records whether paths.env was newly created; existing choices and retry
+    # completions can also require a fresh GUI process.
     paths_written: bool = False
 
 
@@ -198,8 +198,7 @@ def apply_answers(
     portable.prepare_data_dir(data_dir)
 
     # Keep the answer on the result, so a caller can act on the fact that a
-    # fresh choice has just been made — for the packaged first-start, that
-    # means "relaunch now that paths.env is complete".
+    # fresh choice has just been made.
     just_wrote = not (root / portable.PATHS_NAME).exists()
 
     # Record the choice beside the program, keeping any other keys.
@@ -276,10 +275,10 @@ def _start_work(state: dict[str, Any], work: Any, *, with_geoip: bool, window: A
                 browser_env.ensure_geoip()
             state["result"] = result
             state["ok"] = True
-            # A packaged first-start that just wrote paths.env asks its caller
+            # A completed packaged wizard asks its caller
             # for a relaunch, so the wizards' own loop never has to become the
             # manager's loop. Every other path stays in-process.
-            if getattr(result, "paths_written", False) and portable.is_windowed():
+            if portable.is_windowed() and portable.is_frozen():
                 state["relaunch"] = True
         except Exception as exc:  # noqa: BLE001 - shown in the wizard, not swallowed
             logger.exception("First-run setup failed")
@@ -300,7 +299,8 @@ def _start_work(state: dict[str, Any], work: Any, *, with_geoip: bool, window: A
         browser_env.reset_browser_progress()
         thread = threading.Thread(target=run, daemon=True, name="wizard-setup")
         state["worker"] = thread
-    thread.start()
+        # A second caller must not see an assigned but not-yet-alive worker.
+        thread.start()
     return json.dumps({"ok": True, "started": True})
 
 

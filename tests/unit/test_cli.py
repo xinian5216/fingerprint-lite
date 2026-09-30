@@ -19,11 +19,18 @@ from camoufox_pm.config import get_settings
 
 
 @pytest.fixture
-def run(monkeypatch):
+def run(monkeypatch, tmp_path):
     """Run ``main()`` with the given arguments, capturing what it would start."""
     from camoufox import geolocation, multiversion, pkgman
 
-    from camoufox_pm import browser_env
+    from camoufox_pm import browser_env, desktop, portable
+
+    monkeypatch.chdir(tmp_path)
+    for key in (*portable.PATH_KEYS, "CPM_DB_PATH", "CPM_SECRET_KEY"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(portable, "_windowed", False)
+    monkeypatch.setattr(portable, "_notified", False)
+    monkeypatch.setattr(portable, "_ACTIVE", False)
 
     started: dict = {"uvicorn": None, "timers": [], "opened": [], "desktop": None}
 
@@ -37,6 +44,7 @@ def run(monkeypatch):
     monkeypatch.setattr(cli.uvicorn, "run", lambda app, **kw: started.update(uvicorn=kw))
     monkeypatch.setattr(cli.threading, "Timer", FakeTimer)
     monkeypatch.setattr(cli.webbrowser, "open", lambda url: started["opened"].append(url))
+    monkeypatch.setattr(desktop, "run_desktop", lambda **kw: started.update(desktop=kw))
 
     # A portable start asks for the pinned browser in a background thread. A
     # real preparation downloads ~470 MB into whatever browser folder the run
@@ -146,6 +154,11 @@ def run_user(monkeypatch, tmp_path):
     """Run a ``user`` subcommand against a throwaway database, with password
     prompts answered from a scripted list."""
 
+    from camoufox_pm import portable
+
+    monkeypatch.chdir(tmp_path)
+    for key in portable.PATH_KEYS:
+        monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("CPM_DB_PATH", str(tmp_path / "cli.db"))
     monkeypatch.setattr(cli.uvicorn, "run", lambda *a, **k: pytest.fail("must not serve"))
 
@@ -285,6 +298,9 @@ def test_a_second_start_is_refused_with_a_message_instead_of_a_second_server(
     data_dir = tmp_path / "Data"
     _protect_portable_env(monkeypatch, data_dir)
     ctx = portable.bootstrap(["camoufox-pm"], environ=os.environ, program_dir=tmp_path)
+    # This holder is the test process itself. Some sandbox /proc mounts expose
+    # host PIDs, so psutil cannot resolve the process's namespace-local PID.
+    monkeypatch.setattr(portable, "_pid_alive", lambda pid: pid == os.getpid())
     lock = portable.acquire_instance_lock(ctx, port=8123)
     try:
         with pytest.raises(SystemExit) as excinfo:
@@ -400,7 +416,7 @@ def test_cli_and_server_runs_do_not_open_the_wizard(run, tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def _completed_first_run(program_root):
+def _completed_first_run(program_root, *, paths_written=True):
     """A wizard answer that wrote paths.env, the way a real first run ends."""
     from camoufox_pm import wizard as wizard_module
 
@@ -408,7 +424,7 @@ def _completed_first_run(program_root):
         data_dir=program_root / "Data",
         browser_dir=program_root / "Browser",
         temp_dir=program_root / "Temp",
-        paths_written=True,
+        paths_written=paths_written,
     )
 
 
@@ -417,6 +433,8 @@ def _spawned(monkeypatch, record):
     import subprocess
 
     class FakePopen:
+        pid = 4242
+
         def __init__(self, command, **kwargs):
             record.append({"command": list(command), "cwd": kwargs.get("cwd")})
 
@@ -435,24 +453,27 @@ def test_a_completed_windowed_first_run_relaunches_instead_of_a_second_loop(
     from camoufox_pm import desktop, portable, wizard
 
     monkeypatch.chdir(tmp_path)
-    from camoufox_pm import wizard as wizard_module
-
-    # should_show_wizard must agree that this is a first start, or the
-    # relaunch branch is never reached and the test would prove nothing.
-    monkeypatch.setattr(wizard_module, "should_show_wizard", lambda *a, **k: True)
-    # both the relaunch target and the choice the manager must later read
     (tmp_path / "FingerprintLite.exe").write_bytes(b"packaged")
-    (tmp_path / "paths.env").write_text(
-        "CPM_DATA_DIR=" + str(tmp_path / "Data") + "\n", encoding="utf-8"
-    )
-    monkeypatch.setattr(wizard, "run_wizard", lambda *a, **k: _completed_first_run(tmp_path))
-    monkeypatch.setattr(desktop, "run_desktop", lambda **k: None)
+
+    def complete(*a, **k):
+        assert not (tmp_path / "paths.env").exists()
+        assert not (tmp_path / "Data" / "instance.lock").exists()
+        (tmp_path / "paths.env").write_text(
+            "CPM_DATA_DIR=" + str(tmp_path / "Data") + "\n", encoding="utf-8"
+        )
+        return _completed_first_run(tmp_path)
+
+    monkeypatch.setattr(wizard, "run_wizard", complete)
+    monkeypatch.setattr(desktop, "run_desktop", lambda **k: pytest.fail("no second GUI loop"))
+    monkeypatch.setattr(portable, "bootstrap", lambda: pytest.fail("parent must not bootstrap"))
     monkeypatch.setattr(
         portable,
         "resolve_program_exe",
         lambda program_dir=None: Path(program_dir) / "FingerprintLite.exe",
     )
     monkeypatch.setattr(portable, "is_windowed", lambda: True)
+    monkeypatch.setattr(portable, "is_frozen", lambda: True)
+    monkeypatch.setattr(portable, "resolve_program_dir", lambda *a, **k: tmp_path)
     spawned = []
     _spawned(monkeypatch, spawned)
 
@@ -461,12 +482,12 @@ def test_a_completed_windowed_first_run_relaunches_instead_of_a_second_loop(
     assert excinfo.value.code == 0
 
     assert len(spawned) == 1, "the manager must be started exactly once"
-    command = spawned[0]["command"]
-    assert (
-        len(command) == 2
-        and command[0].endswith("FingerprintLite.exe")
-        and (command[1] == "--desktop")
-    ), f"unexpected relaunch command: {command}"
+    assert spawned == [
+        {
+            "command": [str(tmp_path / "FingerprintLite.exe"), "--desktop", "--port", "9123"],
+            "cwd": str(tmp_path),
+        }
+    ]
 
 
 def test_the_relaunch_skips_the_wizard_and_enters_the_desktop_path(run, tmp_path, monkeypatch):
@@ -476,19 +497,113 @@ def test_the_relaunch_skips_the_wizard_and_enters_the_desktop_path(run, tmp_path
     start against the program root now finds paths.env, so the wizard is not
     offered and ``run_desktop`` is where the flow ends.
     """
-    from camoufox_pm import desktop, wizard
+    from camoufox_pm import desktop, portable, wizard
 
     monkeypatch.chdir(tmp_path)
     (tmp_path / "paths.env").write_text(
         "CPM_DATA_DIR=" + str(tmp_path / "Data") + "\n", encoding="utf-8"
     )
     monkeypatch.setattr(wizard, "run_wizard", lambda *a, **k: pytest.fail("wizard must be skipped"))
+    monkeypatch.setattr(portable, "is_windowed", lambda: True)
+    monkeypatch.setattr(portable, "is_frozen", lambda: True)
+    monkeypatch.setattr(portable, "resolve_program_dir", lambda *a, **k: tmp_path)
+    _protect_portable_env(monkeypatch, tmp_path / "Data")
     entered = []
-    monkeypatch.setattr(desktop, "run_desktop", lambda **k: entered.append(k))
+
+    def manager(**kwargs):
+        assert (tmp_path / "Data" / "instance.lock").exists()
+        entered.append(kwargs)
+
+    monkeypatch.setattr(desktop, "run_desktop", manager)
 
     run("--desktop", "--port", "9123")
 
     assert entered, "the relaunched start must reach the desktop path"
+    assert not (tmp_path / "Data" / "instance.lock").exists()
+
+
+@pytest.mark.parametrize(
+    "setup_args",
+    [["--wizard"], ["--wizard-answers", "answers.json"], ["--wizard-answers=answers.json"]],
+)
+def test_relaunch_consumes_setup_flags_and_preserves_runtime_args(
+    tmp_path, monkeypatch, setup_args
+):
+    (tmp_path / "FingerprintLite.exe").write_bytes(b"packaged")
+    (tmp_path / "paths.env").write_text("CPM_DATA_DIR=Data\n", encoding="utf-8")
+    spawned = []
+    _spawned(monkeypatch, spawned)
+    with pytest.raises(SystemExit) as excinfo:
+        cli._relaunch_for_manager(
+            tmp_path, ["--desktop", *setup_args, "--port", "9123", "--portable"]
+        )
+    assert excinfo.value.code == 0
+    assert spawned == [
+        {
+            "command": [
+                str(tmp_path / "FingerprintLite.exe"),
+                "--desktop",
+                "--port",
+                "9123",
+                "--portable",
+            ],
+            "cwd": str(tmp_path),
+        }
+    ]
+
+
+def test_explicit_setup_with_existing_paths_still_relaunches(run, tmp_path, monkeypatch):
+    from camoufox_pm import portable, wizard
+
+    (tmp_path / "FingerprintLite.exe").write_bytes(b"packaged")
+    (tmp_path / "paths.env").write_text("CPM_DATA_DIR=Data\n", encoding="utf-8")
+    result = _completed_first_run(tmp_path, paths_written=False)
+    monkeypatch.setattr(wizard, "run_wizard", lambda *a, **k: result)
+    monkeypatch.setattr(portable, "is_windowed", lambda: True)
+    monkeypatch.setattr(portable, "is_frozen", lambda: True)
+    monkeypatch.setattr(portable, "resolve_program_dir", lambda: tmp_path)
+    spawned = []
+    _spawned(monkeypatch, spawned)
+    with pytest.raises(SystemExit) as excinfo:
+        run("--desktop", "--wizard")
+    assert excinfo.value.code == 0
+    assert spawned[0]["command"] == [str(tmp_path / "FingerprintLite.exe"), "--desktop"]
+
+
+@pytest.mark.parametrize("missing", ["FingerprintLite.exe", "paths.env"])
+def test_incomplete_handoff_fails_instead_of_starting_a_second_loop(tmp_path, monkeypatch, missing):
+    from camoufox_pm import portable
+
+    for name in ("FingerprintLite.exe", "paths.env"):
+        if name != missing:
+            (tmp_path / name).write_text("fixture", encoding="utf-8")
+    spawned, notified = [], []
+    _spawned(monkeypatch, spawned)
+    monkeypatch.setattr(portable, "notify_fatal", notified.append)
+    with pytest.raises(SystemExit) as excinfo:
+        cli._relaunch_for_manager(tmp_path, [])
+    assert excinfo.value.code == 3
+    assert notified and not spawned
+
+
+def test_spawn_failure_is_reported_and_preserves_setup(tmp_path, monkeypatch):
+    import subprocess
+
+    from camoufox_pm import portable
+
+    for name in ("FingerprintLite.exe", "paths.env"):
+        (tmp_path / name).write_text("fixture", encoding="utf-8")
+
+    def fail(*a, **k):
+        raise OSError("synthetic launch failure")
+
+    notified = []
+    monkeypatch.setattr(subprocess, "Popen", fail)
+    monkeypatch.setattr(portable, "notify_fatal", notified.append)
+    with pytest.raises(SystemExit) as excinfo:
+        cli._relaunch_for_manager(tmp_path, [])
+    assert excinfo.value.code == 3
+    assert notified and (tmp_path / "paths.env").read_text(encoding="utf-8") == "fixture"
 
 
 def test_an_existing_paths_env_start_opens_the_manager_inline(run, tmp_path, monkeypatch):
@@ -562,6 +677,20 @@ def test_a_console_first_run_does_not_relaunch(run, tmp_path, monkeypatch):
 
     assert (tmp_path / "paths.env").exists(), "the scripted first run still applies"
     assert spawned == [], "a console run never relaunches into the manager"
+
+
+def test_windowed_source_run_does_not_spawn_a_sibling_exe(run, tmp_path, monkeypatch):
+    from camoufox_pm import portable, wizard
+
+    (tmp_path / "FingerprintLite.exe").write_bytes(b"packaged")
+    monkeypatch.setattr(portable, "is_windowed", lambda: True)
+    monkeypatch.setattr(portable, "is_frozen", lambda: False)
+    monkeypatch.setattr(wizard, "run_wizard", lambda *a, **k: _completed_first_run(tmp_path))
+    spawned = []
+    _spawned(monkeypatch, spawned)
+    started = run("--desktop")
+    assert not spawned
+    assert started["desktop"] is not None
 
 
 def test_scripted_answers_are_applied_before_the_backend_starts(run, tmp_path, monkeypatch):

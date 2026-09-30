@@ -107,3 +107,19 @@ def test_the_windowed_entry_forces_desktop_mode(windowed_env, monkeypatch):
 
     assert windowed.main() == 0
     assert seen["argv"][1] == "--desktop", "double-click means the desktop window"
+
+
+def test_handoff_logger_messages_reach_console_capture(windowed_env, monkeypatch):
+    import os
+
+    from loguru import logger
+
+    from camoufox_pm import cli
+
+    monkeypatch.setattr(cli, "main", lambda: logger.info("First-run handoff: child_pid=4242"))
+    assert windowed.main() == 0
+    console = (Path(os.environ["CPM_DATA_DIR"]) / "logs" / "console.log").read_text(
+        encoding="utf-8"
+    )
+    assert "Windowed entry: pid=" in console
+    assert "First-run handoff: child_pid=4242" in console

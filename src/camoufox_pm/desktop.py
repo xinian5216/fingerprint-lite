@@ -5,6 +5,7 @@ Requires the optional ``desktop`` extra (pywebview). Used by ``camoufox-pm
 """
 
 import contextlib
+import os
 import socket
 import threading
 import time
@@ -83,12 +84,15 @@ def run_desktop(
         server.should_exit = True
         raise SystemExit(f"Server did not start on {host}:{port}")
 
+    logger.info("Desktop server ready: pid={} port={}", os.getpid(), port)
     ui_host = "localhost" if host in ("0.0.0.0", "127.0.0.1") else host
     webview.create_window(title, f"http://{ui_host}:{port}/", width=1280, height=800)
+    logger.info("Desktop GUI loop starting: pid={}", os.getpid())
     if storage_path is not None:
         webview.start(storage_path=storage_path)
     else:
         webview.start()
+    logger.info("Desktop GUI loop ended: pid={}", os.getpid())
 
     # The window was closed — stop the server and wait for it to finish. The
     # server runs in a daemon thread, so returning here would end the process

@@ -280,7 +280,9 @@ def _maybe_run_first_start_wizard() -> None:
     scripted = wizard.answers_from_file(Path(answers_file)) if answers_file else None
 
     if not wizard.should_show_wizard(program_dir):
+        logger.info("Startup pid={}: wizard skipped", os.getpid())
         return
+    logger.info("Startup pid={}: wizard starting", os.getpid())
     result = wizard.run_wizard(program_dir, scripted=scripted)
     if result is None:
         # The user chose to leave: that is a decision, not a failure — exit
@@ -288,7 +290,10 @@ def _maybe_run_first_start_wizard() -> None:
         print("First-run setup cancelled. Nothing was changed.", file=sys.stderr)
         raise SystemExit(0)
 
-    if result.paths_written and portable.is_windowed():
+    logger.info("Startup pid={}: wizard completed", os.getpid())
+    # Explicit setup and retries also consumed this process's GUI loop, even
+    # when paths.env already existed before the successful attempt.
+    if portable.is_windowed() and portable.is_frozen():
         _relaunch_for_manager(program_dir, argv)
 
 
@@ -297,26 +302,30 @@ def _relaunch_for_manager(program_dir: Path, argv: list[str]) -> None:
 
     Only ever called after the wizard completed and paths.env is fully on
     disk. The child therefore skips the wizard (paths.env exists) and runs
-    the desktop path's single pywebview loop. A source or non-packaged run
-    has no executable to spawn and continues in-process, exactly as before.
+    the desktop path's single pywebview loop. Source runs never call this helper.
     """
     import subprocess
 
     from camoufox_pm import portable
 
     exe = portable.resolve_program_exe(program_dir)
-    if exe is None:
-        logger.info("No packaged executable found; continuing in this process")
-        return
-    if not (Path(program_dir) / portable.PATHS_NAME).exists():
-        # The answer said it had written paths.env; if the file is somehow
-        # absent, do not spawn a child that would run without the choice.
-        logger.error("paths.env missing after setup; not relaunching")
-        return
+    if exe is None or not (Path(program_dir) / portable.PATHS_NAME).is_file():
+        portable.notify_fatal(
+            "Setup finished, but the executable or paths.env is missing. "
+            "The manager was not started. Restore the portable program files and try again."
+        )
+        raise SystemExit(3)
 
-    forward = [arg for arg in argv if arg != "--desktop"]
+    # Setup-only flags would force the child back into the wizard, recursively.
+    forward = []
+    args = iter(argv)
+    for arg in args:
+        if arg == "--wizard-answers":
+            next(args, None)
+        elif arg not in ("--desktop", "--wizard") and not arg.startswith("--wizard-answers="):
+            forward.append(arg)
     try:
-        subprocess.Popen([str(exe), "--desktop", *forward], cwd=str(program_dir))
+        child = subprocess.Popen([str(exe), "--desktop", *forward], cwd=str(program_dir))
     except OSError as exc:  # noqa: BLE001 - a clear failure beats a silent skip
         logger.error(f"Could not start the manager process: {exc}")
         portable.notify_fatal(
@@ -324,7 +333,7 @@ def _relaunch_for_manager(program_dir: Path, argv: list[str]) -> None:
             "Please start Fingerprint Lite again manually."
         )
         raise SystemExit(3) from exc
-    logger.info(f"First-run setup complete; relaunching {exe}")
+    logger.info("First-run handoff: parent_pid={} child_pid={} exe={}", os.getpid(), child.pid, exe)
     raise SystemExit(0)
 
 

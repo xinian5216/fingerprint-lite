@@ -15,8 +15,11 @@ differs.
 
 from __future__ import annotations
 
+import os
 import sys
 import traceback
+
+from loguru import logger
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -26,12 +29,20 @@ def main(argv: list[str] | None = None) -> int:
     portable.set_windowed(True)
     saved_out, saved_err = sys.stdout, sys.stderr
     capture = None
+    sink = None
     try:
         program_dir = portable.resolve_program_dir()
         data_dir = portable.resolve_data_dir(program_dir)
         portable.prepare_data_dir(data_dir)
         capture = portable.ConsoleCapture(data_dir / "logs" / "console.log")
         sys.stdout = sys.stderr = capture
+        # Loguru's original stderr sink is bound before the windowed capture;
+        # attach this sink explicitly so wizard/handoff diagnostics survive.
+        sink = logger.add(
+            lambda message: print(message, end="", file=capture, flush=True),
+            format="{time} | {level} | {message}",
+        )
+        logger.info("Windowed entry: pid={} parent_pid={}", os.getpid(), os.getppid())
 
         sys.argv = [sys.argv[0], "--desktop", *(sys.argv[1:] if argv is None else argv)]
         cli.main()
@@ -54,6 +65,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
     finally:
+        if sink is not None:
+            logger.remove(sink)
         if capture is not None:
             capture.close()
         sys.stdout, sys.stderr = saved_out, saved_err

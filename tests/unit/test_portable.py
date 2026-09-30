@@ -248,7 +248,10 @@ def test_console_capture_rotates_and_redacts(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_a_live_instance_stops_a_second_start(tmp_path):
+def test_a_live_instance_stops_a_second_start(tmp_path, monkeypatch):
+    # The holder is known to be alive: this test process. Avoid depending on
+    # whether a sandbox's /proc mount shares the Python process's PID namespace.
+    monkeypatch.setattr(portable, "_pid_alive", lambda pid: pid == os.getpid())
     ctx = portable.bootstrap(["FingerprintLite"], frozen=True, environ={}, program_dir=tmp_path)
     lock = portable.acquire_instance_lock(ctx, port=8123)
     try:
