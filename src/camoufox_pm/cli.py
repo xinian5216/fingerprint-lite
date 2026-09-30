@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import NoReturn
 
 import uvicorn
+from loguru import logger
 
 from camoufox_pm import browser_env, portable
 from camoufox_pm.config import get_settings
@@ -260,8 +261,13 @@ def _maybe_run_first_start_wizard() -> None:
     Cancel is not "continue with defaults": it is a different button in the
     dialog, and it stops the program. Automation answers come from an explicit
     ``--wizard-answers`` file — never from ambient environment.
+
+    On a packaged first-start that completes the setup and writes paths.env,
+    a fresh copy of the program is started (this one skips the wizard and
+    enters the desktop manager) and this process ends there — one GUI loop
+    per process, instead of a second pywebview run beside the wizard's.
     """
-    from camoufox_pm import wizard
+    from camoufox_pm import portable, wizard
 
     program_dir = portable.resolve_program_dir()
     argv = list(sys.argv[1:])
@@ -281,6 +287,45 @@ def _maybe_run_first_start_wizard() -> None:
         # quietly. (Silent-failure rules are for failures; this is not one.)
         print("First-run setup cancelled. Nothing was changed.", file=sys.stderr)
         raise SystemExit(0)
+
+    if result.paths_written and portable.is_windowed():
+        _relaunch_for_manager(program_dir, argv)
+
+
+def _relaunch_for_manager(program_dir: Path, argv: list[str]) -> None:
+    """Start the manager in a fresh process and end this one.
+
+    Only ever called after the wizard completed and paths.env is fully on
+    disk. The child therefore skips the wizard (paths.env exists) and runs
+    the desktop path's single pywebview loop. A source or non-packaged run
+    has no executable to spawn and continues in-process, exactly as before.
+    """
+    import subprocess
+
+    from camoufox_pm import portable
+
+    exe = portable.resolve_program_exe(program_dir)
+    if exe is None:
+        logger.info("No packaged executable found; continuing in this process")
+        return
+    if not (Path(program_dir) / portable.PATHS_NAME).exists():
+        # The answer said it had written paths.env; if the file is somehow
+        # absent, do not spawn a child that would run without the choice.
+        logger.error("paths.env missing after setup; not relaunching")
+        return
+
+    forward = [arg for arg in argv if arg != "--desktop"]
+    try:
+        subprocess.Popen([str(exe), "--desktop", *forward], cwd=str(program_dir))
+    except OSError as exc:  # noqa: BLE001 - a clear failure beats a silent skip
+        logger.error(f"Could not start the manager process: {exc}")
+        portable.notify_fatal(
+            "Setup finished, but the manager could not be started. "
+            "Please start Fingerprint Lite again manually."
+        )
+        raise SystemExit(3) from exc
+    logger.info(f"First-run setup complete; relaunching {exe}")
+    raise SystemExit(0)
 
 
 def _run_browser_command(args: argparse.Namespace) -> None:

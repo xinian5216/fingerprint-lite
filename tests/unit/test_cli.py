@@ -7,7 +7,10 @@ browser is pointed at.
 """
 
 import asyncio
+import json
+import os
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -237,7 +240,6 @@ def test_user_passwd_changes_the_password(run_user, tmp_path):
 
 
 def _protect_portable_env(monkeypatch, data_dir):
-    import os
 
     monkeypatch.setenv("CPM_DATA_DIR", str(data_dir))
     # Tracked first so teardown restores the real environment however this ends.
@@ -249,7 +251,6 @@ def _protect_portable_env(monkeypatch, data_dir):
 
 
 def test_portable_mode_wires_the_data_folder_and_releases_the_lock(run, tmp_path, monkeypatch):
-    import os
 
     data_dir = tmp_path / "Data"
     _protect_portable_env(monkeypatch, data_dir)
@@ -264,7 +265,6 @@ def test_portable_mode_wires_the_data_folder_and_releases_the_lock(run, tmp_path
 
 
 def test_the_portable_flag_is_accepted_in_source_runs(run, tmp_path, monkeypatch):
-    import os
 
     monkeypatch.setenv("CPM_DB_PATH", "sentinel")
     monkeypatch.setenv("CPM_SECRET_KEY", "sentinel")
@@ -279,7 +279,6 @@ def test_the_portable_flag_is_accepted_in_source_runs(run, tmp_path, monkeypatch
 def test_a_second_start_is_refused_with_a_message_instead_of_a_second_server(
     run, tmp_path, monkeypatch, capsys
 ):
-    import os
 
     from camoufox_pm import portable
 
@@ -396,8 +395,176 @@ def test_cli_and_server_runs_do_not_open_the_wizard(run, tmp_path, monkeypatch):
     run("--no-browser")
 
 
+# ---------------------------------------------------------------------------
+# First-run handoff: after the wizard, the manager must actually appear
+# ---------------------------------------------------------------------------
+
+
+def _completed_first_run(program_root):
+    """A wizard answer that wrote paths.env, the way a real first run ends."""
+    from camoufox_pm import wizard as wizard_module
+
+    return wizard_module.WizardResult(
+        data_dir=program_root / "Data",
+        browser_dir=program_root / "Browser",
+        temp_dir=program_root / "Temp",
+        paths_written=True,
+    )
+
+
+def _spawned(monkeypatch, record):
+    """Record what would be relaunched instead of actually starting anything."""
+    import subprocess
+
+    class FakePopen:
+        def __init__(self, command, **kwargs):
+            record.append({"command": list(command), "cwd": kwargs.get("cwd")})
+
+    monkeypatch.setattr(subprocess, "Popen", FakePopen)
+
+
+def test_a_completed_windowed_first_run_relaunches_instead_of_a_second_loop(
+    run, tmp_path, monkeypatch
+):
+    """The manager must appear: one GUI loop per process, not two in one.
+
+    The second webview.start() in the same process never produced a window,
+    so the wizard process hands the completed setup to a fresh process whose
+    paths.env now exists — that one skips the dialog and runs the desktop.
+    """
+    from camoufox_pm import desktop, portable, wizard
+
+    monkeypatch.chdir(tmp_path)
+    from camoufox_pm import wizard as wizard_module
+
+    # should_show_wizard must agree that this is a first start, or the
+    # relaunch branch is never reached and the test would prove nothing.
+    monkeypatch.setattr(wizard_module, "should_show_wizard", lambda *a, **k: True)
+    # both the relaunch target and the choice the manager must later read
+    (tmp_path / "FingerprintLite.exe").write_bytes(b"packaged")
+    (tmp_path / "paths.env").write_text(
+        "CPM_DATA_DIR=" + str(tmp_path / "Data") + "\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(wizard, "run_wizard", lambda *a, **k: _completed_first_run(tmp_path))
+    monkeypatch.setattr(desktop, "run_desktop", lambda **k: None)
+    monkeypatch.setattr(
+        portable,
+        "resolve_program_exe",
+        lambda program_dir=None: Path(program_dir) / "FingerprintLite.exe",
+    )
+    monkeypatch.setattr(portable, "is_windowed", lambda: True)
+    spawned = []
+    _spawned(monkeypatch, spawned)
+
+    with pytest.raises(SystemExit) as excinfo:
+        run("--desktop", "--port", "9123")
+    assert excinfo.value.code == 0
+
+    assert len(spawned) == 1, "the manager must be started exactly once"
+    command = spawned[0]["command"]
+    assert (
+        len(command) == 2
+        and command[0].endswith("FingerprintLite.exe")
+        and (command[1] == "--desktop")
+    ), f"unexpected relaunch command: {command}"
+
+
+def test_the_relaunch_skips_the_wizard_and_enters_the_desktop_path(run, tmp_path, monkeypatch):
+    """The child's own start must see paths.env and land on the desktop loop.
+
+    Same process here (the relaunch decision is what this pins): a second
+    start against the program root now finds paths.env, so the wizard is not
+    offered and ``run_desktop`` is where the flow ends.
+    """
+    from camoufox_pm import desktop, wizard
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "paths.env").write_text(
+        "CPM_DATA_DIR=" + str(tmp_path / "Data") + "\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(wizard, "run_wizard", lambda *a, **k: pytest.fail("wizard must be skipped"))
+    entered = []
+    monkeypatch.setattr(desktop, "run_desktop", lambda **k: entered.append(k))
+
+    run("--desktop", "--port", "9123")
+
+    assert entered, "the relaunched start must reach the desktop path"
+
+
+def test_an_existing_paths_env_start_opens_the_manager_inline(run, tmp_path, monkeypatch):
+    """Nothing changes for a normal start: wizard skipped, one desktop loop."""
+    from camoufox_pm import desktop, wizard
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "paths.env").write_text(
+        "CPM_DATA_DIR=" + str(tmp_path / "Data") + "\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(wizard, "run_wizard", lambda *a, **k: pytest.fail("no wizard here"))
+    entered = []
+    monkeypatch.setattr(desktop, "run_desktop", lambda **k: entered.append(k))
+
+    run("--desktop", "--port", "9123")
+
+    assert entered, "the manager must open in-process as before"
+
+
+def test_cancelling_the_wizard_never_relaunches(run, tmp_path, monkeypatch):
+    from camoufox_pm import desktop, wizard
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(wizard, "run_wizard", lambda *a, **k: None)
+    monkeypatch.setattr(desktop, "run_desktop", lambda **k: pytest.fail("no startup after cancel"))
+    spawned = []
+    _spawned(monkeypatch, spawned)
+
+    with pytest.raises(SystemExit) as excinfo:
+        run("--desktop", "--port", "9123")
+    assert excinfo.value.code == 0
+    assert spawned == [], "cancel means the user left — nothing may restart"
+
+
+def test_a_failed_first_run_never_opens_the_manager(run, tmp_path, monkeypatch):
+    from camoufox_pm import browser_env, desktop, wizard
+
+    monkeypatch.chdir(tmp_path)
+
+    def boom(*_a, **_k):
+        raise browser_env.BrowserInstallError("no browser for you (synthetic)")
+
+    monkeypatch.setattr(wizard, "run_wizard", boom)
+    monkeypatch.setattr(desktop, "run_desktop", lambda **k: pytest.fail("no manager after failure"))
+    spawned = []
+    _spawned(monkeypatch, spawned)
+
+    with pytest.raises(SystemExit) as excinfo:
+        run("--desktop", "--port", "9123")
+    assert excinfo.value.code == 2
+    assert spawned == [], "a failed setup must not start the manager"
+
+
+def test_a_console_first_run_does_not_relaunch(run, tmp_path, monkeypatch):
+    """Only the windowed entry relaunches; a console run keeps its flow."""
+
+    answers = {
+        "data_dir": str(tmp_path / "Data"),
+        "browser_dir": str(tmp_path / "Browser"),
+        "temp_dir": str(tmp_path / "Temp"),
+        "browser_source": "skip",
+    }
+    answers_file = tmp_path / "answers.json"
+    answers_file.write_text(json.dumps(answers), encoding="utf-8")
+    (tmp_path / "FingerprintLite.exe").write_bytes(b"packaged")
+    _protect_portable_env(monkeypatch, tmp_path / "Data")
+    spawned = []
+    _spawned(monkeypatch, spawned)
+
+    run("--desktop", "--port", "9123", "--wizard-answers", str(answers_file))
+
+    assert (tmp_path / "paths.env").exists(), "the scripted first run still applies"
+    assert spawned == [], "a console run never relaunches into the manager"
+
+
 def test_scripted_answers_are_applied_before_the_backend_starts(run, tmp_path, monkeypatch):
-    import json
     import os
 
     from camoufox_pm import desktop

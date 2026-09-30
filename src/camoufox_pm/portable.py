@@ -131,6 +131,11 @@ def set_windowed(value: bool = True) -> None:
     _windowed = value
 
 
+def is_windowed() -> bool:
+    """Whether this process is the windowless desktop entry (FingerprintLite.exe)."""
+    return _windowed
+
+
 def was_notified() -> bool:
     """Whether the user has already been told about a failure this run."""
     return _notified
@@ -147,6 +152,20 @@ def is_portable_request(
     if frozen if frozen is not None else is_frozen():
         return True
     return "--portable" in args or "CPM_DATA_DIR" in env
+
+
+def resolve_program_exe(program_dir: Path | None = None) -> Path | None:
+    """The packaged ``FingerprintLite.exe`` beside ``program_dir``, if present.
+
+    The relaunch after a completed first-start needs a real executable to
+    start; a source run or a non-packaged layout has none and returns
+    ``None`` so the caller continues in-process instead of spawning a shell.
+    """
+    root = Path.cwd() if program_dir is None else Path(program_dir)
+    candidate = root / "FingerprintLite.exe"
+    if candidate.is_file():
+        return candidate
+    return None
 
 
 def resolve_program_dir(frozen: bool | None = None, executable: str | None = None) -> Path:
