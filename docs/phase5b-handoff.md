@@ -1,5 +1,4 @@
 # Phase 5B handoff — global search-engine PoC (IN PROGRESS, paused overnight)
-
 Date: 2026-09-29 EOD. Phase 5B is NOT complete; this is a safe-parking record.
 
 ## Repo state
@@ -78,3 +77,23 @@ the paused per-profile extension route.
 - `origin/main` still `dfd62a1`; `41757b1` + this doc are local-only until
   deliberately pushed (via PR, not direct, when 5B resumes).
 - No version/tag/release actions taken or pending.
+
+## Outcome 2026-09-30 — search-engine line PAUSED (stop condition hit)
+
+- Engine-list proof FAILED: with the policy in place, the address-bar engine
+  popup ("This time search with:") is EMPTY — Startpage is neither listed nor
+  default (user screenshot on file: `.work/` evidence).
+- Supporting signal: Camoufox itself unregisters bundled engines
+  (`browser.policies.runOncePerModification.extensionsUninstall` lists
+  google/bing/amazon/ebay/twitter), so a policy `Add` lands in a stack that
+  is already fighting engine registration — not a stable base for a default.
+- Per the task stop rule the feature is PAUSED, not implemented. No product
+  code was written for it; nothing to revert. Do NOT pursue profile-internal
+  injection (`search.json.mozlz4`, `extensions.json`) or engine changes.
+- Test `policies.json` removed from the dev browser install; launches,
+  installs, caches and Profile data left intact.
+- EINVAL follow-up CLOSED: the custom-dirs wizard run completed end-to-end
+  with the guard fix in place (download → verify → extract → GeoIP → done,
+  `version.json` present). The 47-test guard commit stands validated.
+- Suggested next: Phase 5A real-usage regression first; then decide about
+  alpha.2. Do not rush either.
