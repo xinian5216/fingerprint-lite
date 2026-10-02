@@ -13,7 +13,7 @@ Each profile is **one long-lived machine**. It keeps the same fingerprint every
 session, along with its own cookies, storage and history, so an account opened
 from it in January still looks like the same computer in June.
 
-> **Status:** `v0.1.0-alpha.1` — an early pre-release for evaluation, targeting
+> **Status:** `v0.1.0-alpha.2` — an early pre-release for evaluation, targeting
 > Windows 10/11 x64. It supports local profiles with pinned fingerprints, HTTP
 > proxies with authentication, SOCKS5 without authentication, custom Data/Browser/
 > Temp paths, online/offline Camoufox installation, and profile archive backup
@@ -94,9 +94,10 @@ needed if you build the web UI yourself.
 ### Windows portable Alpha
 
 The prepared Windows package is named
-`FingerprintLite-0.1.0-alpha.1-windows-x64.zip`. No GitHub Release or PyPI
-distribution has been published from this branch; do not use releases from the
-upstream Camoufox Profile Manager project as Fingerprint Lite packages.
+`FingerprintLite-0.1.0-alpha.2-windows-x64.zip`, available from the
+[alpha.2 pre-release](https://github.com/xinian5216/fingerprint-lite/releases/tag/v0.1.0-alpha.2).
+Back up and retain `Data`, `Browser`, `Temp` and `paths.env` when replacing
+program files. See [release notes](docs/release-notes/v0.1.0-alpha.2.md).
 
 ### From source
 

@@ -1,10 +1,11 @@
 # Releasing
 
-## Phase 4A — Alpha preparation
+## Alpha releases
 
-`v0.1.0-alpha.1` is prepared as a Windows 10/11 x64 portable ZIP. This phase
-does not create a tag, GitHub Release, or PyPI publication. The release branch
-must receive explicit final authorization before any of those actions.
+`v0.1.0-alpha.2` packages the merged bilingual UI, download progress, browser
+search and Unicode Windows GeoIP repairs as a Windows x64 portable ZIP.
+Keep Alpha releases marked as pre-releases and retain previous releases for
+rollback. Release publication requires the owner's explicit authorization.
 
 `pyproject.toml` is the project version source. `web/package.json` and its lock
 file mirror that version for the bundled UI; the API, desktop display, and

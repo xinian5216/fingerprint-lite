@@ -1,6 +1,6 @@
 [project]
 name = "camoufox-profile-manager"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 description = "Fingerprint Lite — a local profile manager for Camoufox"
 readme = "README.md"
 requires-python = ">=3.10"
