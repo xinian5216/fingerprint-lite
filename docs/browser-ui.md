@@ -35,7 +35,31 @@ once per source build and UI revision; subsequent launches reuse the completed
 runtime. Failed preparation never publishes a partial runtime, and concurrent
 launches cannot see a half-written copy.
 
-## Validation
+## GeoIP databases in Windows paths
+
+An installed GeoIP database can appear to be missing when its Windows directory
+contains Chinese or other non-ASCII characters. MaxMind's optional native reader
+uses a filename API that rejects those paths; Python can still see and read the
+same file. Fingerprint Lite selects MaxMind's supported Python mmap reader for
+automatic Unicode-path reads in this process. ASCII paths, other platforms and
+explicit reader modes keep their normal behavior. No upstream package files,
+database contents or profile data are rewritten.
+
+This covers browser startup, browser environment preparation and proxy checks.
+The proxy check now distinguishes an unreadable database from a missing or
+damaged one and from an address absent from the database. Its messages follow
+the UI's selected Chinese or English language. A successful network connection
+does not imply the database can determine the exit's country and timezone.
+
+The offline launch regression uses a licensed synthetic MMDB in a Chinese
+directory and checks the timezone resolved by a script in the real page:
+
+```bash
+uv run pytest tests/unit/test_geoip_compat.py
+uv run pytest tests/browser/test_unicode_geoip_launch.py --no-network
+```
+
+## Browser UI validation
 
 Run the real browser check after installing Camoufox:
 

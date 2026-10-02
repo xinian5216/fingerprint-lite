@@ -4,7 +4,10 @@ compare() is pure, so every rule is tested here without a proxy or a network.
 """
 
 import httpx
+import maxminddb
 import pytest
+from camoufox import geolocation
+from camoufox.exceptions import UnknownIPLocation
 
 from camoufox_pm.core import proxy_check
 from camoufox_pm.core.models import BrowserSettings, ProxyConfig, ProxyType
@@ -24,6 +27,36 @@ BERLIN = ProxyLocation(
     latitude=52.52,
     longitude=13.405,
 )
+
+
+@pytest.mark.parametrize(
+    "failure, code",
+    [
+        (UnknownIPLocation("unknown exit"), "geoip_address_unknown"),
+        (FileNotFoundError("missing database"), "geoip_database_missing"),
+        (maxminddb.InvalidDatabaseError("damaged"), "geoip_database_invalid"),
+        (PermissionError("unreadable"), "geoip_unavailable"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_location_failures_are_distinguished_and_preserved(monkeypatch, failure, code):
+    def fail_lookup(ip):
+        raise failure
+
+    async def resolve(proxy, timeout):
+        return "203.0.113.7", 12
+
+    monkeypatch.setattr(geolocation, "get_geolocation", fail_lookup)
+    monkeypatch.setattr(proxy_check, "resolve_exit_ip", resolve)
+    with pytest.raises(proxy_check.LocationUnavailable) as caught:
+        proxy_check.locate("203.0.113.7")
+    assert caught.value.code == code
+    assert caught.value.__cause__ is failure
+    result = await proxy_check.check(None, BrowserSettings())
+    assert result.reachable is True
+    assert result.findings[0].code == code
+    assert "camoufox fetch" not in result.findings[0].message
+    assert proxy_check.record(result).findings[0].code == code
 
 
 def levels(findings, field):

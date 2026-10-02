@@ -2,7 +2,8 @@
 //
 // No i18n framework on purpose — the app has ~200 short strings and no
 // pluralisation rules worth a dependency. Backend messages (proxy errors,
-// validation detail) stay in English; only this client renders the dictionary.
+// validation detail) use English fallbacks; coded proxy location findings are
+// translated by the client so saved checks follow the selected UI language.
 
 'use client'
 
@@ -15,6 +16,10 @@ const STORAGE_KEY = 'fingerprint-lite.ui-lang'
 type Dict = Record<string, string>
 
 const en: Dict = {
+  'proxy.geoip_address_unknown': 'The proxy works, but its exit address is not in the location database. Its country and timezone could not be confirmed.',
+  'proxy.geoip_database_missing': 'The proxy works, but the location database is missing. Wait for browser setup to finish, then retry.',
+  'proxy.geoip_database_invalid': 'The proxy works, but the location database is damaged and needs to be restored.',
+  'proxy.geoip_unavailable': 'The proxy works, but the location database could not be read. Retry after browser setup finishes; if this persists, check the application logs.',
   // Rail
   'nav.profiles': 'Profiles',
   'nav.schedules': 'Schedules',
@@ -368,6 +373,10 @@ const en: Dict = {
 }
 
 const zh: Dict = {
+  'proxy.geoip_address_unknown': '代理连接正常，但数据库未收录该出口地址，暂时无法确认国家和时区。',
+  'proxy.geoip_database_missing': '代理连接正常，但地理位置数据库缺失。请等待浏览器环境准备完成后重新检测。',
+  'proxy.geoip_database_invalid': '代理连接正常，但地理位置数据库已损坏，需要恢复数据库文件。',
+  'proxy.geoip_unavailable': '代理连接正常，但暂时无法读取地理位置数据库。请在浏览器环境准备完成后重新检测；若仍失败，请查看应用日志。',
   // Rail
   'nav.profiles': 'Profile',
   'nav.schedules': '计划任务',

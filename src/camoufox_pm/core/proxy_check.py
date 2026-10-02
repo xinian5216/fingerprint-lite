@@ -29,9 +29,12 @@ from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
+import maxminddb
+from camoufox.exceptions import UnknownIPLocation
 from camoufox.ip import valid_ipv4, valid_ipv6
 from loguru import logger
 
+from ..geoip_compat import install_windows_geoip_reader
 from .models import (
     BrowserSettings,
     Level,
@@ -71,6 +74,10 @@ LAUNCH_TIMEOUT = 5.0
 class LocationUnavailable(RuntimeError):
     """The exit address could not be placed on the map."""
 
+    def __init__(self, message: str, code: str = "geoip_unavailable") -> None:
+        super().__init__(message)
+        self.code = code
+
 
 @dataclass(frozen=True)
 class ProxyLocation:
@@ -90,6 +97,7 @@ class Finding:
     level: Level
     field: str
     message: str
+    code: str | None = None
 
 
 @dataclass
@@ -116,7 +124,7 @@ def record(result: ProxyCheckResult, checked_at: datetime | None = None) -> Prox
         country=result.location.country if result.location else None,
         timezone=result.location.timezone if result.location else None,
         findings=[
-            ProxyCheckFinding(level=f.level, field=f.field, message=f.message)
+            ProxyCheckFinding(level=f.level, field=f.field, message=f.message, code=f.code)
             for f in result.findings
         ],
     )
@@ -182,7 +190,14 @@ def locate(ip: str) -> ProxyLocation:
         raise LocationUnavailable(str(exc)) from exc
 
     try:
+        install_windows_geoip_reader()
         geo = get_geolocation(ip)
+    except UnknownIPLocation as exc:
+        raise LocationUnavailable(str(exc), "geoip_address_unknown") from exc
+    except FileNotFoundError as exc:
+        raise LocationUnavailable(str(exc), "geoip_database_missing") from exc
+    except maxminddb.InvalidDatabaseError as exc:
+        raise LocationUnavailable(str(exc), "geoip_database_invalid") from exc
     except Exception as exc:
         raise LocationUnavailable(str(exc)) from exc
 
@@ -401,12 +416,18 @@ async def check(
         location = await asyncio.to_thread(locate, ip)
     except LocationUnavailable as exc:
         logger.warning(f"Could not place {ip}: {exc}")
+        messages = {
+            "geoip_address_unknown": "The proxy works, but its exit address is not in the location database.",
+            "geoip_database_missing": "The proxy works, but the location database is missing. Wait for browser setup to finish, then retry.",
+            "geoip_database_invalid": "The proxy works, but the location database is damaged and needs to be restored.",
+            "geoip_unavailable": "The proxy works, but its location database could not be read. Retry after browser setup finishes; if this persists, check the application logs.",
+        }
         findings.append(
             Finding(
                 "info",
                 "proxy",
-                "The proxy works, but its address could not be placed on the map. "
-                "Run 'camoufox fetch' to install the location database.",
+                messages.get(exc.code, messages["geoip_unavailable"]),
+                code=exc.code,
             )
         )
         return ProxyCheckResult(

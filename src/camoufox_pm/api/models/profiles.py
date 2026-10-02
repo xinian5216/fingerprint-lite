@@ -383,6 +383,7 @@ class ProxyFindingResponse(BaseModel):
     level: Level = Field(..., description="error, warning or info")
     field: str = Field(..., description="The setting the finding is about")
     message: str
+    code: str | None = None
 
 
 class ProxyCheckResponse(BaseModel):
