@@ -71,9 +71,9 @@ def test_window_tuple_from_width_height():
     assert p.to_camoufox_launch_options()["window"] == (1024, 768)
 
 
-def test_config_is_empty_when_nothing_set():
+def test_only_the_system_cursor_is_shown_by_default():
     bs = BrowserSettings(os="macos")
-    assert bs.to_camoufox_config() == {}
+    assert bs.to_camoufox_config() == {"showcursor": False}
 
 
 def test_launch_options_pass_high_level_params_and_config():

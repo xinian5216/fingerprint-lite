@@ -163,7 +163,7 @@ class BrowserSettings(BaseModel):
         own generator owns user-agent, WebGL, canvas and audio to keep the
         fingerprint internally consistent.
         """
-        config: dict[str, Any] = {}
+        config: dict[str, Any] = {"showcursor": False}
         if self.geolocation:
             config["geolocation:latitude"] = self.geolocation["lat"]
             config["geolocation:longitude"] = self.geolocation["lon"]
