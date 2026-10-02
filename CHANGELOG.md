@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.0-alpha.2] - 2026-10-02
+
+### Added
+- Simplified Chinese and English in the manager and first-start wizard.
+- Live browser-download progress, with downloaded bytes, percentage and
+  verification, extraction and GeoIP preparation stages.
+- Proxy-country language alignment on explicit saved-profile checks, with a
+  form action to apply the proxy language while preserving manual choices.
+
 ### Fixed
 - Read GeoIP databases from Unicode Windows directories using MaxMind's
   supported Python mmap reader for automatic non-ASCII filename reads. Browser

@@ -27,9 +27,18 @@ def test_the_reported_version_matches_the_package_metadata():
     one that gets forgotten: a wheel built as 0.2.0 reported 0.1.1 through
     /health and in the OpenAPI schema."""
     from importlib.metadata import version
+    from pathlib import Path
+
+    from packaging.version import Version
 
     from camoufox_pm import __version__
 
     assert __version__ == version("camoufox-profile-manager")
-    assert __version__ == "0.1.0-alpha.1"
+    project = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    declared = next(
+        line.split("=", 1)[1].strip().strip('"')
+        for line in project.read_text(encoding="utf-8").splitlines()
+        if line.startswith("version = ")
+    )
+    assert Version(__version__) == Version(declared)
     assert __version__ != "0.0.0+unknown", "the package should be installed for the test run"
