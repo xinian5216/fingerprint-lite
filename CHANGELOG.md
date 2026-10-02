@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Restore browser search in the pinned Camoufox build, with Startpage as the
+  initial default and DuckDuckGo, Brave Search, Google and Bing as alternatives.
+  User-selected defaults survive relaunch; remote search suggestions stay off.
+- Disable the red cursor highlighter for new and existing profiles.
+- Render Windows minimize, maximize, restore and close icons without depending
+  on restricted icon fonts, retaining Firefox's native button behavior.
+- Prepare these UI repairs in an isolated, reusable runtime under the selected
+  Browser directory, preserving the verified upstream installation and profiles.
+
 ## [0.1.0-alpha.1] - 2026-09-29
 
 First Fingerprint Lite Alpha, prepared for Windows x64 evaluation. This is a

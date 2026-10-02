@@ -61,6 +61,7 @@ def installed(monkeypatch):
     """Pretend Camoufox is installed and hand every launch the given stand-in."""
 
     def install(camoufox: FakeCamoufox) -> FakeCamoufox:
+        monkeypatch.setattr(bs.browser_ui, "prepare_launch_options", lambda options: options)
         monkeypatch.setattr(bs, "CAMOUFOX_AVAILABLE", True)
         monkeypatch.setattr(bs, "AsyncCamoufox", lambda **_options: camoufox)
         return camoufox

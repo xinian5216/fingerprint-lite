@@ -37,6 +37,10 @@ from it in January still looks like the same computer in June.
   fingerprint are provably one computer.
 - **Browser control** — launch and stop a browser per profile; closing the window
   yourself is noticed and the session is cleaned up.
+- **Browser search** — Startpage by default, with DuckDuckGo, Brave Search,
+  Google and Bing available in the browser's search menu. Search suggestions
+  are off by default. The system mouse cursor is used without a red overlay,
+  and Windows window controls use vector icons. See [browser UI](docs/browser-ui.md).
 - **Scheduling** — open a profile on a schedule (warming), and keep its pinned
   browser version current automatically. Hardware never rotates on a timer, on
   purpose — [docs/scheduling.md](docs/scheduling.md).

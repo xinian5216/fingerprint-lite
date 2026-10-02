@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 import psutil
 from loguru import logger
 
-from .. import browser_env, portable
+from .. import browser_env, browser_ui, portable
 from ..config import get_settings
 
 if TYPE_CHECKING:
@@ -249,6 +249,9 @@ class BrowserSessionManager:
         self._starting[profile_id] = self._starting.get(profile_id, 0) + 1
         try:
             try:
+                launch_options = await asyncio.to_thread(
+                    browser_ui.prepare_launch_options, launch_options
+                )
                 camoufox = AsyncCamoufox(**launch_options)
                 browser = await camoufox.start()
             except Exception as exc:  # noqa: BLE001
