@@ -195,6 +195,7 @@ class ProxyCheckFinding(BaseModel):
     level: Level
     field: str
     message: str
+    code: str | None = None
 
 
 class ProxyCheckRecord(BaseModel):

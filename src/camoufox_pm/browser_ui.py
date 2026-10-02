@@ -181,6 +181,10 @@ def prepare_launch_options(options: dict[str, Any]) -> dict[str, Any]:
     """Apply UI fixes on every managed launch, including existing profiles."""
     from camoufox.pkgman import launch_path
 
+    from .geoip_compat import install_windows_geoip_reader
+
+    install_windows_geoip_reader()
+
     launch = dict(options)
     if launch.get("browser") and not launch.get("executable_path"):
         from camoufox.multiversion import find_installed_version

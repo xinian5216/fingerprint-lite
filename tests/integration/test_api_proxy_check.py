@@ -157,6 +157,8 @@ async def test_a_working_proxy_the_database_cannot_place(client, monkeypatch):
         "longitude": None,
     }
     assert [f["level"] for f in body["findings"]] == ["info"]
+    assert body["findings"][0]["code"] == "geoip_unavailable"
+    assert "camoufox fetch" not in body["findings"][0]["message"]
 
 
 @pytest.mark.asyncio

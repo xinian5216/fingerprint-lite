@@ -5,7 +5,7 @@ import { Check, Info, LoaderCircle, RefreshCw, TriangleAlert, X } from 'lucide-r
 
 import { Modal } from '@/components/modal'
 import { useToast } from '@/components/toast'
-import { useT } from '@/lib/i18n'
+import { useLang, useT } from '@/lib/i18n'
 import {
   hasGeography,
   isStaleWrite,
@@ -13,6 +13,7 @@ import {
   OS_LABELS,
   presetsAPI,
   profilesAPI,
+  proxyFindingMessage,
   type DevicePreset,
   type FingerprintSummary,
   type Profile,
@@ -1022,6 +1023,7 @@ function Section({
  */
 function ProxyCheckResult({ result }: { result: ProxyCheck | null }) {
   const t = useT()
+  const { lang } = useLang()
   if (!result) return null
 
   if (!result.reachable) {
@@ -1062,7 +1064,7 @@ function ProxyCheckResult({ result }: { result: ProxyCheck | null }) {
           ) : (
             <TriangleAlert size={13} className="mt-0.5 shrink-0" />
           )}
-          <span>{finding.message}</span>
+          <span>{proxyFindingMessage(finding, lang)}</span>
         </p>
       ))}
     </div>

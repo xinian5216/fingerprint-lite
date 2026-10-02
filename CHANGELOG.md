@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- Read GeoIP databases from Unicode Windows directories using MaxMind's
+  supported Python mmap reader for automatic non-ASCII filename reads. Browser
+  launches and proxy checks no longer misreport existing databases as missing.
+- Distinguish unavailable, missing, damaged and unlisted-address GeoIP results
+  with stable finding codes and Chinese/English UI messages, including legacy
+  saved findings. Remove the misleading instruction to run `camoufox fetch`.
 - Restore browser search in the pinned Camoufox build, with Startpage as the
   initial default and DuckDuckGo, Brave Search, Google and Bing as alternatives.
   User-selected defaults survive relaunch; remote search suggestions stay off.

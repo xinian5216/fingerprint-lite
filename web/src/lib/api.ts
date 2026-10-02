@@ -201,6 +201,7 @@ export interface ProxyFinding {
   level: 'error' | 'warning' | 'info'
   field: string
   message: string
+  code?: string | null
 }
 
 export interface ProxyCheck {
@@ -516,6 +517,18 @@ export function formatProxyString(proxy?: ProxyConfig | null): string {
 import type { Lang } from '@/lib/i18n'
 import { render } from '@/lib/i18n'
 
+/** Codes localize new results; the legacy text covers checks stored before this update. */
+export function proxyFindingMessage(finding: ProxyFinding, lang: Lang): string {
+  const supported = ['geoip_address_unknown', 'geoip_database_missing', 'geoip_database_invalid', 'geoip_unavailable']
+  if (finding.code && supported.includes(finding.code)) {
+    return render(`proxy.${finding.code}`, lang)
+  }
+  if (finding.message === "The proxy works, but its address could not be placed on the map. Run 'camoufox fetch' to install the location database.") {
+    return render('proxy.geoip_unavailable', lang)
+  }
+  return finding.message
+}
+
 export function readProxyCheck(check: ProxyCheckRecord, lang: Lang = 'zh-CN'): {
   tone: 'ok' | 'warn' | 'danger'
   label: string
@@ -532,7 +545,7 @@ export function readProxyCheck(check: ProxyCheckRecord, lang: Lang = 'zh-CN'): {
     check.ip,
     [check.country, check.timezone].filter(Boolean).join(' · ') || null,
     check.latency_ms !== null ? `${check.latency_ms} ms` : null,
-    ...notes.map((finding) => finding.message),
+    ...notes.map((finding) => proxyFindingMessage(finding, lang)),
     `${render('api.checkedPrefix', lang)}${formatLastUsed(check.checked_at, lang).toLowerCase()}`,
   ].filter(Boolean)
 
